@@ -1,10 +1,23 @@
----
-typora-root-url: pic
----
-
 ## 数学基础
 
 ### 1 叉乘
+
+#### 1) 叉乘的定义
+
+​	向量叉乘的结果由两个属性定义：
+
+- 模长：$|\vec{a} \times \vec{b}| = |\vec{a}| \cdot |\vec{b}| \cdot sin\theta$，其中$\theta$是两个向量的夹角，$0 \leq \theta \leq 180$。
+- 方向：$\vec{c}= \vec{a} \times \vec{b}$的方向与$\vec{a}$和$\vec{b}$所在平面垂直，且遵守`右手法则`：当右手的手指从$\vec{a}$以不超过180°的角度旋转到$\vec{b}$时，竖起的大拇指方向则是$\vec{c}$的方向。
+
+#### 2) 补充性质
+
+​	二维平面上，有向量$\vec{P}=(x_{1},y_{1})$和向量$\vec{Q}=(x_{2},y_{2})$，则有$\vec{P}\times\vec{Q}=(x_{1}y_{2} - x_{2}y_{1})$。
+
+​	若$\vec{P}\times\vec{Q} > 0$，$\vec{P}$在$\vec{Q}$的顺时针方向(右侧)；
+
+​	若$\vec{P}\times\vec{Q} < 0$，$\vec{P}$在$\vec{Q}$的逆时针方向(左侧)；
+
+​	若$\vec{P}\times\vec{Q} = 0$，$\vec{P}$和$\vec{Q}$在同一条直线上，可能同向，也可能异向。
 
 ## 矩阵
 
@@ -16,28 +29,28 @@ typora-root-url: pic
 
 ​	齐次坐标表示是计算机图形学的重要手段之一，它既能够用来明确**区分向量和点**，同时也**更易于进行仿射(线性)几何变换**。
 
-<img src="/cg_matrix_0.png" alt="cg_matrix_0" style="zoom:100%;" />
+<img src="/pic/cg_matrix_0.png" alt="cg_matrix_0" style="zoom:100%;" />
 
 ​	从上述矩阵变换可知，平移变换只对于点才有意义，因为普通向量没有位置概念，只有大小和方向。
 
 ​	旋转和缩放对于向量和点都有意义，可用类似上面齐次表示来检测。因此，齐次坐标使仿射变换更方便。
 
-### 2 透视变换
+### 2 相机变换
 
-​	世界空间的点经过相机矩阵后，被转换到相机空间。此时，多边形可能会被视椎体裁剪，但在不规则体中裁剪很难，所以裁剪被安排到规则观察体(`Canonical View Volume, CVV`)中。
+### 3 透视变换
+
+​	世界空间的点经过相机矩阵后，被转换到相机空间。此时，多边形可能会被视椎体裁剪，但在不规则体中裁剪很难，所以裁剪被安排到规则观察体(`Canonical View Volume, CVV`)中(`齐次裁剪空间`)。
 
 ​	CVV是一个正方体，其x, y, z的范围都是[-1, 1]，多边形裁剪就是利用这个规则体完成的。综上，透视变换的作用如下：
 
 - 透视变换矩阵把相机空间中的顶点从视锥体中变换到裁剪空间的CVV中(`相似变换`)；
 - CVV裁剪完成后进行透视除法。
 
-<img src="/cg_matrix_1.png" alt="cg_matrix_1" style="zoom:100%;" />
+<img src="/pic/cg_matrix_1.png" alt="cg_matrix_1" style="zoom:100%;" />
 
-#### 1) 原理推导
+#### 1) 投影点坐标
 
-<img src="/cg_matrix_2.png" alt="cg_matrix_2" style="zoom:100%;" />
-
-##### 1.1) 投影点坐标
+<img src="/pic/cg_matrix_2.png" alt="cg_matrix_2" style="zoom:100%;" />
 
 ​	上图是右手坐标系中顶点在相机空间中的情形。设p(x,z)是经过相机变换之后的点，视锥体由eye——眼睛位置，np——近裁剪平面，fp——远裁剪平面组成。N是眼睛到近裁剪平面的距离，F是眼睛到远裁剪平面的距离。这里选择**近裁剪面**作为投影面。
 
@@ -55,17 +68,17 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, z)\qquad\qquad\qquad\qquad\qquad\qquad\qquad\
 
 ​	公式(1)其中x, y, z是相机空间点的坐标，N是近平面的距离。
 
-##### 1.2) 用齐次坐标表达投影点
+#### 2) 用齐次坐标表达投影点
 
 ​	公式(1)有点生搬硬套的意思，现开始结合CVV进行思考，把它写得在数学上更优雅，更易于程序处理。如前所述，第3个分量可以是任意值，因此有公式(2)：
 
 $p'=(-N\frac{x}{z}, -N\frac{y}{z}, -\frac{az+b}{z})\qquad\qquad\qquad\qquad\qquad\qquad\qquad\qquad\qquad\qquad(2)$
 
-<img src="/cg_matrix_3.png" alt="cg_matrix_3" style="zoom:100%;" />其中，<img src="/cg_matrix_4.png" alt="cg_matrix_4" style="zoom:100%;" />
+<img src="/pic/cg_matrix_3.png" alt="cg_matrix_3" style="zoom:100%;" />其中，<img src="/pic/cg_matrix_4.png" alt="cg_matrix_4" style="zoom:100%;" />
 
-​	步骤一：投影矩阵乘法；
+​	步骤一：投影矩阵乘法：首先进行`相似变换`，将点投影到裁剪平面；其次，使用`线性插值`进行`坐标归一化`，使[left, right]、[bottom, far]、[-N, -F]之间的点变为[-1, 1]，方便裁剪；
 
-​	步骤二：在CVV中进行裁剪；可以看到，裁剪时，使用的是齐次坐标，因为透视除法后会丢失一些必要信息，如-z。
+​	步骤二：CVV中执行裁剪；裁剪时，使用的是齐次坐标，因为透视除法后会丢失一些必要信息，如-z。
 
 ​	步骤三：透视除法，将齐次坐标变换为普通坐标。
 
@@ -81,31 +94,85 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, -\frac{az+b}{z})\qquad\qquad\qquad\qquad\qqua
 
 - CVV是一个x, y, z的范围为[-1, 1]的规则体，便于进行多边形裁剪。我们可以适当的选择系数a和b，使得![fig19.GIF](https://p-blog.csdn.net/images/p_blog_csdn_net/popy007/fig19.GIF)这个式子在z = -N的时候值为-1，在z = -F的时候值为1，从而在z方向上构建CVV。
 
-##### 1.3) 投影矩阵
+#### 3) 投影矩阵
 
-​	投影矩阵需要在x, y, z三个方向上构建CVV，CVV中的齐次左边变为普通坐标后，最终形式为：<img src="/cg_matrix_5.png" alt="cg_matrix_5" style="zoom:100%;" />
+​	投影矩阵需要在x, y, z三个方向上构建CVV，CVV中的齐次左边变为普通坐标后，最终形式为：<img src="/pic/cg_matrix_5.png" alt="cg_matrix_5" style="zoom:100%;" />
 
-- 在Z方向构建CVV，由z的范围是[-N, -F]，因此有：
+##### 3.1) 在Z方向构建CVV
 
-  <img src="/cg_matrix_cvv_z.png" alt="cg_matrix_cvv_z" style="zoom:100%;" />
+​	z的范围是[-N, -F]，因此有：
 
-- 在X、Y方向构建CVV，$-N\frac{x}{z}$是投影平面上的点，范围是[-left, right]，$x'$是标准化后的点，范围是[-1, 1]。
+<img src="/pic/cg_matrix_cvv_z.png" alt="cg_matrix_cvv_z" style="zoom:100%;" align="center" />
 
-  二者是**同一个值的不同形式**，$x'$是最终的目标值，$-N\frac{x}{z}$是推导过程的`中间值`，用于理解。因此有：
+##### 3.2) 在X和Y方向构建CVV
 
-  <img src="/cg_matrix_cvv_x.png" alt="cg_matrix_cvv_x" style="zoom:100%;" />
+​	$-N\frac{x}{z}$是投影平面上的点，范围是[left, right]，$x'$是标准化后的点，范围是[-1, 1]。
 
-- 最终，标准化的投影点如下：<img src="/cg_matrix_cvv_std.png" alt="cg_matrix_cvv_std" style="zoom:100%;" />
+​	二者是**同一个值的不同形式**，$x'$是最终的目标值，$-N\frac{x}{z}$是推导过程的`中间值`，用于理解。因此有：
 
-- 从投影点反推投影矩阵：
+<img src="/pic/cg_matrix_cvv_x.png" alt="cg_matrix_cvv_x" style="zoom:100%;" align="center"/>
 
-  首先，做透视除法的逆处理——每个分量乘以-z，得到：
+##### 3.3) 标准化后的投影点坐标
 
-  <img src="/cg_matrix_cvv_inverse.png" alt="cg_matrix_cvv_inverse" style="zoom:100%;" />
+<img src="/pic/cg_matrix_cvv_std.png" alt="cg_matrix_cvv_std" style="zoom:100%;" />
 
-  由<img src="/cg_matrix_cvv_mutiply.png" alt="cg_matrix_cvv_mutiply" style="zoom:100%;" />
+##### 3.4) 坐标反推投影矩阵
 
-  有M为：<img src="/cg_matrix_cvv_prj.png" alt="cg_matrix_cvv_prj" style="zoom:100%;" />
+​	首先，做透视除法的逆处理：每个分量乘以-z，得到：
+
+<img src="/pic/cg_matrix_cvv_inverse.png" alt="cg_matrix_cvv_inverse" style="zoom:100%;" align="left"/>，又有：<img src="/pic/cg_matrix_cvv_mutiply.png" alt="cg_matrix_cvv_mutiply" style="zoom:100%;" />
+
+​	可以反求得到投影矩阵M：
+
+<img src="/pic/cg_matrix_cvv_prj.png" alt="cg_matrix_cvv_prj" style="zoom:100%;" align="left" />
+
+​	综上，投影矩阵最后一行是：$\begin{pmatrix}0 & 0 & -1 & 0\end{pmatrix}$，而不是$\begin{pmatrix}0 & 0 & 0 & 1\end{pmatrix}$，可知透视变换**不是仿射变换**，它是非线性的。
+
+​	进入CVV的点在[-1, 1]中，从而造成了**投影失真现象**。
+
+​	投影失真的解决方法就是之后的`视口变换`：把归一化的顶点按照和`投影面上相同的比例`变换到视口中，从而解除透视投影变换带来的失真现象。
+
+### 4 坐标变换流程
+
+<img src="/pic/cg_matrix_flow.png" alt="cg_matrix_flow" style="zoom:100%;" />
+
+​	$世界空间 \stackrel{(1)相机矩阵}{\longrightarrow} 相机空间 \stackrel{(2)投影矩阵}{\longrightarrow} 裁剪空间CVV \stackrel{(3)透视除法}{\longrightarrow} 普通坐标 \stackrel{(4)视口变换}{\longrightarrow} 窗口坐标$
+
+​	其中，第二步透视变换包含两个步骤：$ 投影矩阵=\left\{ \begin{matrix} 相似变换 \\ X、Y、Z三轴线性插值至[-1,1]\end{matrix} \right.$
+
+### 5 3d拾取
+
+#### 1) 屏幕上的点转换到视口坐标
+
+​	屏幕坐标原点在屏幕左上角，x向右，y向下；
+
+​	视口坐标原点在左下角，x向右，向上。
+
+#### 2) 视口中的点转换到投影平面上
+
+​	投影平面的点被实施视口变换(线性插值)后，被变换到视口中。在这里，我们要实施一个逆变换。
+
+$\frac{X_{vp} - Left_{vp}}{Right_{vp} - Left{vp}} = \frac{X_{p1} -(-1)}{1-(-1)}$
+
+$\frac{Y_{vp} - Left_{vp}}{Right_{vp} - Left{vp}} = \frac{Y_{p1} -(-1)}{1-(-1)}$
+
+​	综上，屏幕点击的位置被转换到了投影平面上，有：$P_{1}(X_{p1},Y_{p1},-N)$。
+
+​	此时，该点是处于CVV中的，需要通过再次一次线性插值，把其转换到[left, right]、[bottom, top]中，得到$P_{2}(X_{p2},Y_{p2},-N)$：
+
+$\frac{X_{p1} -(-1)}{1-(-1)} = \frac{X_{p2}-Left_{prj}}{Right_{prj}-Left{prj}}$
+
+$\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}$
+
+#### 3) 向三维空间拓展
+
+<img src="/pic/cg_matrix_3d_pickup.png" alt="cg_matrix_3d_pickup" style="zoom:100%;" />
+
+​	使用射线ray，把2维空间的点拓展到3维中。
+
+​	图中的模型处于相机空间中。射线起点为eye的位置，射线的方向朝近平面上的$P_{2}$延伸，得到射线ray；
+
+​	通过ray和三维空间的三角面求交，来完成拾取。
 
 ## 算法应用
 
@@ -127,7 +194,7 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, -\frac{az+b}{z})\qquad\qquad\qquad\qquad\qqua
 
 #### 2) 深度的非线性
 
-<img src="/cg_depth_non_linear.png" alt="cg_depth_non_linear" style="zoom:65%;" />
+<img src="/pic/cg_depth_non_linear.png" alt="cg_depth_non_linear" style="zoom:65%;" />
 
 ​	z：模型点经过模型、视图变换后，在相机空间中的z值；
 
@@ -139,7 +206,7 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, -\frac{az+b}{z})\qquad\qquad\qquad\qquad\qqua
 
 - 数学上：投影面上等距的多个点，在三维空间中不是等距的；
 
-  <img src="/cg_depth_non_linear_1.png" alt="cg_depth_non_linear_1" style="zoom:40%;" />
+  <img src="/pic/cg_depth_non_linear_1.png" alt="cg_depth_non_linear_1" style="zoom:40%;" />
 
   上图中三维空间点$(x_{1},z_{1})$和$(x_{2},z_{2})$投影到z为-e的平面上得到两点$(p_{1},-e)$和$(p_{2},-e)$。在投影点间取几个等距点还原，可以看到还原的三维点并不等距。
 
@@ -157,7 +224,7 @@ $z=\frac{2nf}{f+n-(2d-1)*(f-n)}$
 
 ​	3D空间中，这些属性值在图元上是线性变化的。但当3D顶点被透视投影到2D屏幕之后，如果在2D投影面上对属性值进行线性插值，会有问题，如下图所示：
 
-<img src="/cg_depth_non_linear_2.png" alt="cg_depth_non_linear_2" style="zoom:60%;" />
+<img src="/pic/cg_depth_non_linear_2.png" alt="cg_depth_non_linear_2" style="zoom:60%;" />
 
 ​	图中将A和B是带属性的两个顶点；
 

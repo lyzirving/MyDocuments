@@ -29,7 +29,7 @@
 
 ​	齐次坐标表示是计算机图形学的重要手段之一，它既能够用来明确**区分向量和点**，同时也**更易于进行仿射(线性)几何变换**。
 
-<img src="/pic/cg_matrix_0.png" alt="cg_matrix_0" style="zoom:100%;" />
+<img src="./pic/cg_matrix_0.png" alt="cg_matrix_0" style="zoom:100%;" />
 
 ​	从上述矩阵变换可知，平移变换只对于点才有意义，因为普通向量没有位置概念，只有大小和方向。
 

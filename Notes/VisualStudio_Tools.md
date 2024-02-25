@@ -10,11 +10,11 @@
 
   如下所示：
 
-  <img src="/pic/vs_pic_0.png" alt="vs_pic_0" style="zoom:100%;" />
+  <img src="./pic/vs_pic_0.png" alt="vs_pic_0" style="zoom:100%;" />
 
   得到输出：
 
-  <img src="/pic/vs_pic_1.png" alt="vs_pic_1" style="zoom:100%;" />
+  <img src="./pic/vs_pic_1.png" alt="vs_pic_1" style="zoom:100%;" />
 
   
 

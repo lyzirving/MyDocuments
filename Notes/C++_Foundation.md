@@ -134,7 +134,7 @@ class Derived : public Base
 }
 ```
 
-<img src="/pic/note_pic_0.png" alt="note_pic_0" style="zoom:100%;" />
+<img src="./pic/note_pic_0.png" alt="note_pic_0" style="zoom:100%;" />
 
 ​	有覆盖的情况：
 
@@ -153,7 +153,7 @@ class Derived : public Base
 }
 ```
 
-<img src="/pic/note_pic_1.png" alt="note_pic_1" style="zoom:100%;" />
+<img src="./pic/note_pic_1.png" alt="note_pic_1" style="zoom:100%;" />
 
 ### 3 虚析构函数
 
@@ -202,7 +202,7 @@ delete pt;
 - **全局/静态存储区**：全局变量和静态变量被分配到同一块内存中，C语言中区分初始化和未初始化的，C++中不再区分。
 -  **常量存储区**：存储常量，不允许被修改。
 
-<img src="/pic/note_pic_mem_area.png" alt="note_pic_mem_area" style="zoom:100%;" />
+<img src="./pic/note_pic_mem_area.png" alt="note_pic_mem_area" style="zoom:100%;" />
 
 #### 2) 区域间的不同
 
@@ -307,7 +307,7 @@ private:
 
 ​	类的静态成员在**全局区**，函数在**代码区**，下述展示了堆栈上的类对象布局：
 
-<img src="/pic/note_pic_2.png" alt="note_pic_2" style="zoom:100%;" />
+<img src="./pic/note_pic_2.png" alt="note_pic_2" style="zoom:100%;" />
 
 #### 2) 单继承下的对象模型
 
@@ -328,7 +328,7 @@ private:
 };
 ```
 
-<img src="/pic/note_pic_derive.png" alt="note_pic_derive" style="zoom:100%;" />
+<img src="./pic/note_pic_derive.png" alt="note_pic_derive" style="zoom:100%;" />
 
 - 对于一般继承（相对于虚拟继承），子类有**独有**的虚函数表；
 - 若子类重写了父类的虚函数，子类虚函数将覆盖虚表中对应的父类虚函数；
@@ -384,7 +384,7 @@ private:
 
 ​	多继承的对象模型如下：
 
-<img src="/pic/note_pic_mutiple_base_class.png" alt="note_pic_mutiple_base_class" style="zoom:100%;"/>
+<img src="./pic/note_pic_mutiple_base_class.png" alt="note_pic_mutiple_base_class" style="zoom:100%;"/>
 
 #### 4) 菱形继承
 
@@ -439,7 +439,7 @@ public:
 
 ​	此时D的内存布局如下：
 
-<img src="/pic/note_pic_mutiple_base_class_2.png" alt="note_pic_mutiple_base_class_2" style="zoom:50%;" />
+<img src="./pic/note_pic_mutiple_base_class_2.png" alt="note_pic_mutiple_base_class_2" style="zoom:50%;" />
 
 ​	D间接继承了B两次，导致D内部会有两个B的成员ib。这不仅增大了内存空间，也会引起程序歧义：
 
@@ -463,7 +463,7 @@ d.B2::ib = 1;  //正确
 
 ​	包含虚基表的情况：
 
-<img src="pic/note_pic_vbptr.png" alt="note_pic_vbptr" style="zoom:80%;" />
+<img src="./pic/note_pic_vbptr.png" alt="note_pic_vbptr" style="zoom:80%;" />
 
 ​	不含虚基表的情况：
 
@@ -488,7 +488,7 @@ class B1 : virtual public B {...}
 *(int *)((int *)*((int *)(&a) + 1) + 1);
 ```
 
-<img src="/pic/note_pic_vbptr2.png" alt="note_pic_vbptr2" style="zoom:50%;" />
+<img src="./pic/note_pic_vbptr2.png" alt="note_pic_vbptr2" style="zoom:50%;" />
 
 ##### 5.2) 菱形虚拟继承
 
@@ -501,7 +501,7 @@ class D : public B1, public B2 {...}
 
 ​	其中D的对象模型如下：
 
-<img src="/pic/note_pic_vbptr3.png" alt="note_pic_vbptr3" style="zoom:70%;" />
+<img src="./pic/note_pic_vbptr3.png" alt="note_pic_vbptr3" style="zoom:70%;" />
 
 #### 6) 空壳类
 

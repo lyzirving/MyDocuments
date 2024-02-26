@@ -176,7 +176,77 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 ## 算法应用
 
-### 1 判断任意点在凸多边形内部/外部
+### 1 判断多边形的凹凸性
+
+​	依次顺时针遍历多边形的顶点。若向量的叉积保持一致，则是凸多边形，反之是凹多边形。
+
+​	求$\vec{p_{0}p_{1}}\times\vec{p_{0}p_{2}}$：
+
+```c++
+double cross(Point& p1, Point& p2, Point& p0)
+{
+    return (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
+}
+```
+
+​	判断是否为凸多边形。若Polygon是顺时针排序，叉乘结果应该小于0；若Polygon是逆指针排序，叉乘结果应该大于0：
+
+```c++
+bool isConvexPolygon(QVector<Point> Polygon)
+{
+    int len = Polygon.size();
+    int s = 0, e = len;
+    if(e == 2)
+        return true;
+    while (s <= e-3) {
+        if (cross(Polygon[s+1], Polygon[s+2],Polygon[s]) < 0)
+            s++;
+        else 
+            return false;
+    }
+    return true;
+}
+```
+
+### 2 判断任意点在凸多边形内部/外部
+
+​	射线法、转角法参考[此处](https://blog.csdn.net/WilliamSun0122/article/details/77994526)。
+
+#### 1) 射线法
+
+​	以被测点Q为端点，向任意方向作射线(一般水平向右作射线)。统计该射线与多边形的交点数。如果为奇数，Q在多边形内；如果为偶数，Q在多边形外。
+
+​	如下图有些特殊情况：
+
+<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_ray_intersect.png" alt="cg_ray_intersect" style="zoom:80%;" />
+
+​	情况a)，射线和两条边的共同顶点相交，此时交点只能算一个；
+
+​	情况b)，射线和两条线的最低处共同顶点相交，该点不能算；
+
+​	情况c)，射线和多边形的一边平行，该边应忽略不计。
+
+#### 2) 转角法
+
+<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_intersect_turning_angle.png" alt="cg_intersect_turning_angle" style="zoom:30%;" />
+
+<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_intersect_turning_angle_1.png" alt="cg_intersect_turning_angle_1" style="zoom:75%;" />
+
+​	多边形内部的点连接各个顶点，其所形成的角度和在精度范围内应等于360度，如果小于360度或者大于360度，则证明该点不在多边形中。
+
+​	转角法简单，但是由于涉及要使用反三角函数，会耗时，且造成较大的精度误差。
+
+#### 3) 转角法优化
+
+​	从P点向右做射线R，如果边从射线R下方跨到上方，那么穿越+1，如果从上方跨到下方，则是-1。最终和为wn环绕数。
+
+<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_intersect_turning_angle_optimize.png" alt="cg_intersect_turning_angle_optimize" style="zoom:85%;" />
+
+​	这种方法不必去计算射线和边的交点，但需要判断点P和边的左右关系，而且对于方向向上和向下的边的判断规则不同。
+
+​	对于方向向上的边，如果穿过射线，那么P是在有向边的左侧；对于方向向下的边，如果穿过射线，那么P在有向边的右侧。
+
+<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_intersect_turning_angle_optimize_1.png" alt="cg_intersect_turning_angle_optimize_1" style="zoom:75%;" />
 
 ## ShadowMap
 

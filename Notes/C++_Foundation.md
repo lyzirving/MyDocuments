@@ -852,3 +852,67 @@ ref_a = 6;
 ```
 
 ​	右值引用能指向右值，本质上也是把右值**提升**为一个左值，并定义一个右值引用通过std::move指向该左值。
+
+### 3 完美转发
+
+#### 1) 万能引用
+
+```c++
+template<typename T>
+void PerfectForward(T&& t)//万能引用
+{
+	//……
+}
+```
+
+​	右值引用和万能引用的区别：右值引用需要`确定类型`，万能引用是根据传入实参的类型进行`推导`。
+
+​	如果传入的实参是一个左值，那形参t就是左值引用；如果传入的实参是一个右值，那形参t就是右值引用。	
+
+​	万能引用也叫做**引用折叠**，若传入的是个左值，那&&折叠成一个&；若传入的是一个右值，那还是&&。
+
+#### 2) 图解万能引用推导规则
+
+<img src="E:\Code\0_personal\MyDocuments\Notes\pic\c++_universal_ref.png" alt="c++_universal_ref" style="zoom:100%;" />
+
+<img src="E:\Code\0_personal\MyDocuments\Notes\pic\c++_universal_ref_1.png" alt="c++_universal_ref_1" style="zoom:100%;" />
+
+<img src="E:\Code\0_personal\MyDocuments\Notes\pic\c++_universal_ref_2.png" alt="c++_universal_ref_2" style="zoom:100%;" />
+
+<img src="E:\Code\0_personal\MyDocuments\Notes\pic\c++_universal_ref_3.png" alt="c++_universal_ref_3" style="zoom:100%;" />
+
+#### 3) std::forward
+
+```c++
+void Fun(int& x) { cout << "左值引用" << endl; }
+void Fun(const int& x) { cout << "const 左值引用" << endl; }
+void Fun(int&& x) { cout << "右值引用" << endl; }
+void Fun(const int&& x) { cout << "const 右值引用" << endl; }
+
+template<typename T>
+void PerfectForward(T&& t) { Fun(t); }
+
+int main()
+{
+	PerfectForward(10);//右值, 输出左值引用
+	int a;
+	PerfectForward(a);//左值, 输出左值引用
+	PerfectForward(std::move(a));//右值, 输出左值引用
+	const int b = 8;
+	PerfectForward(b);//const左值, 输出const 左值引用
+	PerfectForward(std::move(b));//const右值, 输出const 左值引用
+	return 0;
+}
+```
+
+​	实际条用Fun()时，通过参数t进行引用，已经退化为左值。
+
+```c++
+template<class T>
+void PerfectForward(T&& t)
+{
+	Func(std::forward<T>(t));
+}
+```
+
+​	通过std::forward进行转发，就能达到想要的效果。

@@ -873,13 +873,13 @@ void PerfectForward(T&& t)//万能引用
 
 #### 2) 图解万能引用推导规则
 
-<img src="E:\Code\0_personal\MyDocuments\Notes\pic\c++_universal_ref.png" alt="c++_universal_ref" style="zoom:100%;" />
+<img src=".\pic\c++_universal_ref.png" alt="c++_universal_ref" style="zoom:100%;" />
 
-<img src="E:\Code\0_personal\MyDocuments\Notes\pic\c++_universal_ref_1.png" alt="c++_universal_ref_1" style="zoom:100%;" />
+<img src=".\pic\c++_universal_ref_1.png" alt="c++_universal_ref_1" style="zoom:100%;" />
 
-<img src="E:\Code\0_personal\MyDocuments\Notes\pic\c++_universal_ref_2.png" alt="c++_universal_ref_2" style="zoom:100%;" />
+<img src=".\pic\c++_universal_ref_2.png" alt="c++_universal_ref_2" style="zoom:100%;" />
 
-<img src="E:\Code\0_personal\MyDocuments\Notes\pic\c++_universal_ref_3.png" alt="c++_universal_ref_3" style="zoom:100%;" />
+<img src=".\pic\c++_universal_ref_3.png" alt="c++_universal_ref_3" style="zoom:100%;" />
 
 #### 3) std::forward
 

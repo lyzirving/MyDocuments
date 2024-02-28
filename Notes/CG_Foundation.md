@@ -218,7 +218,7 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 ​	如下图有些特殊情况：
 
-<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_ray_intersect.png" alt="cg_ray_intersect" style="zoom:80%;" />
+<img src=".\pic\cg_ray_intersect.png" alt="cg_ray_intersect" style="zoom:80%;" />
 
 ​	情况a)，射线和两条边的共同顶点相交，此时交点只能算一个；
 
@@ -228,9 +228,9 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 #### 2) 转角法
 
-<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_intersect_turning_angle.png" alt="cg_intersect_turning_angle" style="zoom:30%;" />
+<img src=".\pic\cg_intersect_turning_angle.png" alt="cg_intersect_turning_angle" style="zoom:30%;" />
 
-<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_intersect_turning_angle_1.png" alt="cg_intersect_turning_angle_1" style="zoom:75%;" />
+<img src=".\pic\cg_intersect_turning_angle_1.png" alt="cg_intersect_turning_angle_1" style="zoom:75%;" />
 
 ​	多边形内部的点连接各个顶点，其所形成的角度和在精度范围内应等于360度，如果小于360度或者大于360度，则证明该点不在多边形中。
 
@@ -240,13 +240,13 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 ​	从P点向右做射线R，如果边从射线R下方跨到上方，那么穿越+1，如果从上方跨到下方，则是-1。最终和为wn环绕数。
 
-<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_intersect_turning_angle_optimize.png" alt="cg_intersect_turning_angle_optimize" style="zoom:85%;" />
+<img src=".\pic\cg_intersect_turning_angle_optimize.png" alt="cg_intersect_turning_angle_optimize" style="zoom:85%;" />
 
 ​	这种方法不必去计算射线和边的交点，但需要判断点P和边的左右关系，而且对于方向向上和向下的边的判断规则不同。
 
 ​	对于方向向上的边，如果穿过射线，那么P是在有向边的左侧；对于方向向下的边，如果穿过射线，那么P在有向边的右侧。
 
-<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_intersect_turning_angle_optimize_1.png" alt="cg_intersect_turning_angle_optimize_1" style="zoom:75%;" />
+<img src=".\pic\cg_intersect_turning_angle_optimize_1.png" alt="cg_intersect_turning_angle_optimize_1" style="zoom:75%;" />
 
 ## ShadowMap
 

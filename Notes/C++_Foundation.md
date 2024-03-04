@@ -2,74 +2,163 @@
 
 ### 1 可变参数模板
 
-1. 参数个数未知，参数类型相同
+#### 1) 参数个数未知，参数类型相同
 
-   标准库类型initializer_list：容器类型，容器元素为常量。
+标准库类型initializer_list：容器类型，容器元素为常量。
 
-2. 参数个数未知，参数类型可能不同
+#### 2) 参数个数未知，参数类型可能不同
 
-   ```c++
-   template<class... T>      // T是模板参数包
-   void function(T ... args) // args是函数参数包
-   {
-   }
-   ```
+##### 2.1) 形式
 
-   …代表一个包含0到n的任意参数包，其中的任意代表任意数目和任意类型。
+```c++
+template<class... T>      // T是模板参数包
+void function(T ... args) // args是函数参数包
+{
+}
+```
 
-   …在参数右侧代表一组实参，…在参数左侧代表可变参数。
+…代表一个包含0到n的任意参数包，其中的任意代表任意数目和任意类型。
 
-3. 可变参数包展开
+…在参数右侧代表一组实参，…在参数左侧代表可变参数。
 
-   - 查询个数：
+##### 2.2) 可变参数包展开
 
-     ```c++
-     template<typename... Args>
-     unsigned int length(Args... args) { return sizeof...(args); }
-     ```
+###### 2.2.1) 查询个数
 
-   - 递归展开：
+```c++
+template<typename... Args>
+unsigned int length(Args... args) { return sizeof...(args); }
+```
 
-     ```c++
-     // 边界函数
-     void print() {}
-     
-     template<typename T, typename... Types> //(1)可变参数
-     void print(const T& firstArg, const Types&... args) //(2)可变参数
-     {
-     	std::cout << firstArg << " " << sizeof...(args) << std::endl; 
-     	print(args...); //(3)一组实参
-     }
-     ```
+###### 2.2.2) 递归展开
 
-   - 逗号运算符展开：
+```c++
+// 边界函数
+void print() {}
 
-     ```c++
-     template<typename T>
-     void show_arg(const T& t) {}
-     
-     template <typename ... Args>
-     void expand(const Args&... args)
-     {
-     	int arr[] = {(show_arg(args), 0)...}; 
-     }
-     ```
+template<typename T, typename... Types> //(1)可变参数
+void print(const T& firstArg, const Types&... args) //(2)可变参数
+{
+	std::cout << firstArg << " " << sizeof...(args) << std::endl; 
+	print(args...); //(3)一组实参
+}
+```
 
-     解析如下：
+###### 2.2.3) 逗号运算符展开
 
-     ```c++
-     // 函数调用
-     expand(1, 2, 3, 4);
-     // expand内部展开后如下
-     int arr[] = { (show_arg(1), 0), 
-                   (show_arg(2), 0), 
-                   (show_arg(3), 0),
-                   (show_arg(4), 0)};
-     // 结果代码如下
-     int arr[] = {0, 0, 0, 0}; 
-     ```
+```c++
+template<typename T>
+void show_arg(const T& t) {}
 
-### 2 逗号运算符
+template <typename ... Args>
+void expand(const Args&... args)
+{
+	int arr[] = {(show_arg(args), 0)...}; 
+}
+```
+
+​	解析如下：
+
+```c++
+// 函数调用
+expand(1, 2, 3, 4);
+// expand内部展开后如下
+int arr[] = { (show_arg(1), 0), 
+              (show_arg(2), 0), 
+              (show_arg(3), 0),
+              (show_arg(4), 0)};
+// 结果代码如下
+int arr[] = {0, 0, 0, 0}; 
+```
+
+### 2 模板实参推断(Template Argument Deduction)
+
+​	编译器利用调用中的**函数实参来确定模板参数**，这个过程就叫模板实参推断。本小节参考自[这里](https://blog.csdn.net/qq_41453285/article/details/104447573)。
+
+#### 1) 模板实参推导和类型转换
+
+​	将实参传递给带模板函数的函数形参时，能够自动应用的类型转换只有：**const转换**、**数组转换**、**函数到指针转换**。
+
+​	const转换：将非const对象的引用/指针转化为const对象的引用/指针；
+
+​	数组转换：数组实参可转换为一个指向其首元素的指针；
+
+​	函数转换：函数实参可转换为该函数类型的指针。
+
+```c++
+template<typename T>
+T fobj(T, T);
+ 
+template<typename T>
+T fref(const T&, const T&);
+ 
+int main()
+{
+    string s1("a value");
+    const string s2("another value");
+    fobj(s1, s2); //OK，调用fobj(string,string); s2的const会忽略
+    fref(s1, s2); //OK，调用fref(const string&,const string&); 将s1转换为const是允许的
+ 
+    int a[10], b[42];
+    fobj(a, b);  //OK, 调用f(int*,int*)
+    fref(a, b);  //Error，数组类型不匹配，数组a和b的大小不同，所以类型不同
+ 
+    return 0;
+}
+```
+
+#### 2) 模板实参推导和引用
+
+##### 2.1) 左值引用函数参数推导
+
+​	当模板函数参数是左值引用(形如T&)，则：
+
+①**只能传递给它一个左值**(变量、返回引用类型的表达式等)；
+
+②实参可以是const，也可以不是。
+
+```c++
+template<typename T>
+void f1(T&) { }
+ 
+int main()
+{
+    int i;
+    const int ci=10; 
+    f1(i);  //OK, T是int
+    f1(ci); //OK, T是const int
+    f1(5);  //Error, 5为右值
+    return 0;
+}
+```
+
+​	当模板函数参数是const T&，则：
+
+①可以传递给它**任何类型的实参：**对象(const/非const)、临时对象、字面量常量；
+
+②T的类型推断**不会是一个const类型**，因为const已经是函数参数的一部分。
+
+```c++
+template<typename T>
+void f1(const T&) { }
+ 
+int main()
+{
+    int i;
+    const int ci=10;
+ 
+    f1(i);  //OK, T是int
+    f1(ci); //OK, T是int
+    f1(5);  //OK, const&可以绑定到右值上, T是int
+	return 0;
+}
+```
+
+##### 2.2) 万能引用函数参数推导
+
+
+
+### 3 逗号运算符
 
 ​	C++提供了一种特殊的运算符：逗号运算符(**顺序求值**运算符)，可将两个表达式连接起来。
 
@@ -916,3 +1005,348 @@ void PerfectForward(T&& t)
 ```
 
 ​	通过std::forward进行转发，就能达到想要的效果。
+
+### 4 const相关
+
+#### 1) 指针常量和常量指针
+
+**判断指针常量和常量指针**：遵循指针的定义技巧，从指针标识符开始，由右往左读，const修饰最靠近它的那个。
+
+**指针常量(constant pointer)**：指针修饰的常量，指针指向的**地址不能被修改**，但地址里的内容可以被修改；
+
+```c++
+int a = 8;
+int* const p = &a; //指针常量, const靠近变量
+*p=9; //OK
+p=&b; //Error
+```
+
+**常量指针(pointer to const)**：定义指针变量的时，数据类型前用const修饰，该指针即指向常量的指针。指针的地址可以被修改，但**地址的内容不能被修改**。
+
+```c++
+int a，b;
+const int *p = &a; //常量指针, const靠近被修饰的类型
+*p=9; //Error
+p=&b; //OK
+// ---------------------------------------------
+int const *q = &a; //同p
+```
+
+#### 2) 顶层const和底层const
+
+##### 2.1) 定义
+
+​	顶层const：指针常量，指针的指向不能被改变，称其为顶层const属性；
+
+​	底层const：常量指针，指针指向的地址内容是个常量，称其为底层const属性。
+
+```c++
+int* const p1 = &a;//p1是顶层const
+const int* p2 = &a;//p2是底层const
+```
+
+##### 2.2) 赋值规律
+
+- 顶层const在赋值给其他变量时，**可以忽略**顶层属性；
+- 底层const在赋值给其他变量时，**不能忽略**底层属性；
+- int*类型可以转换为顶层和底层const，所以它可以给顶层和底层的const赋值；
+- 底层const**无法转换**为顶层const。
+
+##### 2.3) 示例
+
+```c++
+int a = 2,
+int *p = &a;
+
+const int *p1 = p; // (1) OK, int*可以转换为底层const
+int* const p2 = p; // (2) OK, int*可以转换为顶层const
+
+int* const p3 = p1; // (3) Error, p1为底层const, 赋值时不能忽略
+const int* p4 = p2; // (4) OK, p2为顶层const, 赋值时可以忽略
+
+int* p5 = p1; // (5) Error, 原因同(3)
+int* p6 = p2; // (6) OK, 原因同(4)
+
+const int* const p7 = p1; // (7) OK, p7具有底层属性, 且p1有底层属性
+const int* const p8 = p2; // (8) OK, p2具有顶层属性, 可被忽略
+
+const int* p10 = p7; // (9) OK, p10具备底层属性
+int* const p11 = p7; // (10) Error, p11没有底层属性, 但p7有, 不能忽略
+```
+
+### 5 auto相关
+
+#### 1) auto推导规则
+
+- 规则1：声明为**auto**的变量，**忽视**掉初始化表达式的**顶层const**。
+
+  对有const的普通类型(int 、double等)，忽略const；
+
+  对指针常量(顶层const)变为普通指针；
+
+  对常量指针(底层const)变为指向常量指针(保持底层const属性)。
+
+- 规则2：声明为**auto&**的变量，**保持**初始化表达式的顶层**const**或**volatile**属性。
+
+- 规则3：若希望auto推导的是顶层const，加上const，即**const auto**。
+
+#### 2) 示例
+
+##### 2.1) auto示例
+
+```c++
+int i = 0, &ri = i;
+
+auto a = i;   //a为int型变量
+auto a1 = ri; //a1为int型变量
+
+auto p = &i;   //&i是int*, p是int*
+auto p1 = &ri; //同上
+// ----------------------------------------------------
+const int ci = 2, &rci = ci , ci2 = 9;
+
+auto b = ci;   //b为int型变量: 规则1忽略顶层const
+auto b1 = rci; //同上
+b = 4; b1 = 5; //b和b1的值可以改变
+
+auto cp = &ci; //cp是常量指针const int*，保持底层const
+cp = &ci2;     //cp的指向可以改变
+
+// ----------------------------------------------------
+int z = 9, z1 = 10;
+
+int* const pz1 = &z;       //指针常量(顶层const)
+const int* pz2 = &z;       //常量指针(底层const)
+const int* const pz3 = &z; //同时包含底层和顶层const
+
+auto apz1 = pz1;//apz1为int*, 忽略顶层const
+auto apz2 = pz2;//apz2为const int*, 保持底层const
+auto apz3 = pz3;//apz3为const int*, 保持底层const
+```
+
+##### 2.2) auto&示例
+
+```c++
+int i = 0, &ri = i;
+const int ci = 2, &rci = ci;
+	
+auto& j = i;  //j为int &
+auto& k = ci; //k为const int&
+auto& h = 42; //Error, 不能将非常量引用绑定字面值, 这是引用&规则决定的
+
+const auto& j2 = i;  //j2为const int&，因为规则3, j2被提升为顶层const
+const auto& k2 = ci; //k2为const int&
+const auto& h2 = 42; //正确，可以为常量绑定字面值 
+
+auto& m = &i;        //Error，无法从“int *”转换为“int *&”
+auto& m1 = &ci;      //Error，无法从“const int *”转换为“const int *&”, 这是引用&规则决定的
+const auto& m2 = &i; //m2为int* const&
+const auto& m3 = &ci;//m3为const int* const&
+```
+
+##### 2.3) const auto示例
+
+```c++
+int i = 0, &ri = i;
+const int ci = 2, &rci = ci ;
+
+const auto cb = i;   //cb为const int型。规则3, cb被提升为const
+const auto cb1 = ci; //同上
+
+const auto ca1 = &i; //cal为指针常量。&i本是int*，因为规则3，强行将cal提升为指针常量int *const
+const auto ccp = &ci;//本来&ci为const int *，因为规则3，加了const后，提升为const int* const
+```
+
+#### 3) auto的作用
+
+- 代替冗长复杂的变量声明；
+
+- 定义模板参数时，用于声明依赖模板参数的变量：
+
+  ```c++
+  template <typename _Tx,typename _Ty>
+  void Multiply(_Tx x, _Ty y)
+  {
+      auto v = x+y;
+      std::cout << v;
+  }
+  ```
+
+- 定义模板函数依赖于模板参数的返回值类型：
+
+  ```c++
+  template <typename _Tx, typename _Ty>
+  auto multiply(_Tx x, _Ty y)->decltype(x*y)
+  {
+      return x*y;
+  }
+  ```
+
+#### 4) auto推断的原理
+
+​	本小节内容参考自[这里](https://www.zhihu.com/question/294048058)。
+
+##### 4.1) auto使用模板实参推断机制
+
+​	auto使用的是**模板实参推断(*Template Argument Deduction*)**的机制；
+
+​	编译器产生一个函数模板，auto被模板类型参数T替代，把待推导的变量作为函数**实参**。
+
+```c++
+template<typename Container>
+void useContainer(const Container& container)
+{
+    auto pos = container.begin();  //(1)第一处推导
+    while (pos != container.end())
+    { 
+        auto& element = *pos++;    //(2)第二处推导
+        … // 对元素进行操作
+    }
+}
+```
+
+​	第一处推导等价如下：
+
+```c++
+// auto pos = container.begin();
+----------------------------------
+template<typename T>
+void deducePos(T pos);
+
+deducePos(container.begin());
+```
+
+​	此时T的推导类型就是auto。
+
+​	第二处推导等价如下：
+
+```c++
+// auto& element = *pos++;
+-------------------------------
+template<typename T>
+void deduceElement(T& element);
+
+deduceElement(*pos++);
+```
+
+##### 4.2) auto和初始化列表
+
+​	对于初始化列表，auto会将其视为**std::initializer_list**，但模板不能对其进行推断。
+
+```c++
+auto x = { 1, 2 }; // C++14禁止了对auto用initializer_list直接初始化，必须用=
+auto x2 { 1 };    // 保留了单元素列表的直接初始化，但不会将其视为initializer_list
+std::cout << typeid(x).name();  // class std::initializer_list<int>
+std::cout << typeid(x2).name(); // C++14中为int
+
+--------------------------------
+template<typename T>
+void deduceX(T x);
+deduceX(x); // 错误：不能推断T
+```
+
+### 6 decltype
+
+#### 1) decltype和auto的区别
+
+​	C++ Primer中写道：`有时希望从表达式的类型推断出要定义的变量的类型`，`同时不想用该表达式的值初始化变量`。
+
+​	auto推导变量依赖于初始化它的表达式，且auto声明的变量**必须被初始化**；
+
+​	decltype是直接通过某一个表达式来获取数据类型，**不用使用表达式的值**。
+
+```c++
+int a = 10, b = 11;
+auto c = a + b;    //c为int型
+decltype(a + b) d; //d为int型
+```
+
+#### 2) decltype用法
+
+##### 2.1) decltype变量
+
+```c++
+decltype(var)
+```
+
+​	与auto不同，decltype会**保留**const属性和引用属性：
+
+```c++
+const int ci = 0, &cj = ci;
+--------------------- decltype --------------------
+decltype(ci) x = 0; //x的类型为const int
+decltype(cj) y = x; //y的类型为const int&
+decltype(cj) z;     //Error，z的类型为const int&，必须初始化
+----------------------- auto ----------------------
+auto w = ci;//w的类型是int， 忽略顶层const
+w = 9;
+auto n = cj;//n的类型是int
+```
+
+##### 2.2) decltype表达式
+
+```c++
+decltype(expr)
+```
+
+​	表达式作右值，推导为该数据类型：
+
+```c++
+int i = 42, &r = i;
+decltype(r + 0) b; //b类型是int，而不是int&
+```
+
+​	表达式作左值，推导为该类型的引用：
+
+```c++
+int ii = 42, *p = &ii;
+decltype(*p) c;   //Error, c是int&，必须初始化
+decltype((ii)) d; //Error, ii是变量, (ii)是表达式, 且ii可以被赋值, 所以d是int&，必须初始化
+```
+
+##### 2.3) decltype函数
+
+###### 2.3.1) decltype(f())
+
+```c++
+decltype(f()) sum = x; 
+```
+
+​	sum的类型就是假如函数f被调用，其返回的类型。**注意**：若函数的返回值为**void**，编译报错。
+
+```c++
+template <typename T>
+T add(T a, T b) {	return a+b; }
+
+decltype(add(1,2)) m = 10;      //m的类型是int
+decltype(add(1.0,2.0)) m2 = 20; //m2的类型是double
+```
+
+###### 2.3.2) decltype(f)
+
+​	下述例子中，`decltype(add_to)`直接返回函数类型，所以pf是一个函数指针。
+
+```c++
+int add_to(int a, int b) { return a + b; }
+
+decltype(add_to) *pf = add_to; //pf就是一个函数指针，类型为int(int,int)
+pf(1,2);
+```
+
+​	如果函数是**模板的**、**重载的**，无法通过函数名来推导函数指针的类型。
+
+#### 3) decltype主要作用
+
+​	用于申明返回值类型依赖于其参数类型的模板函数：
+
+```c++
+template <typename _Tx, typename _Ty>
+auto multiply(_Tx x, _Ty y)->decltype(x*y)
+{
+    return x*y;
+}
+```
+
+​	注意这里的auto没有做任何类型推断，只是用来表明这里使用的是C++11的拖尾返回类型`(trailing return type)`语法：函数返回类型在参数列表之后进行声明(在"->"之后)。
+
+​	拖尾返回类型的优点：可以使用函数参数来声明函数返回类型。

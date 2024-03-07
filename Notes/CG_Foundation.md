@@ -41,9 +41,21 @@
 
 ​	在概念上可以分为四个阶段：**应用程序阶段**、**几何阶段**、**光栅化阶段**和**像素处理阶段**。
 
+<img src="./pic/cg_pipeline_1.png" alt="cg_pipeline_1" style="zoom:80%;" />
+
+​	应用阶段通常是在CPU端进行处理，包括碰撞检测、动画物理模拟以及视椎体剔除等任务，这个阶段会将数据送到渲染管线中；
+
+​	顶点着色器、投影变换、曲线细分、几何着色器、图元装配、裁剪、屏幕映射；
+
+​	光栅化将图元离散化片段的过程；
+
+​	像素处理阶段包括像素着色和混合的功能。如下图所示：
+
 <img src="./pic/cg_pipeline.png" alt="cg_pipeline" style="zoom:85%;" />
 
-**图元组装**
+#### 1) 管线概述
+
+- **图元组装**
 
 ​	图元组装将输入的顶点组装成指定的图元。
 
@@ -51,7 +63,7 @@
 
 ​	在光栅化之前，还会进行屏幕映射的操作：**透视除法**和**视口变换**。
 
-**光栅化**
+- **光栅化**
 
 ​	经过图元组装以及屏幕映射后，物体坐标被变换到了**窗口坐标**。
 
@@ -61,17 +73,91 @@
 
 ​	注意，**片段是像素的候选者**，只有通过后续的测试，片段才会成为最终显示的像素点。
 
-**片段着色器**
+- **片段着色器**
 
-**测试混合**
+​	片段着色器用来决定屏幕上像素的最终颜色，可能会进行大量效果计算(光照和阴影)。
+
+- **测试混合**
+
+​	管线的**最后一个阶段**是测试混合阶段。测试包括裁切测试、Alpha测试、模板测试和深度测试(**late-z**)。
+
+​	没有经过测试的片段会被丢弃，不需要进行混合阶段；经过测试的片段会**进入混合阶段**。
+
+​	注意，绘制半透明物体最好遵循**画家算法(painter algorithm)**，将物体排序，**由远及近**进行绘制。因为半透明物体的绘制顺序会影响混合的结果。	
+
+<img src="./pic/cg_painter_algothimn.png" alt="cg_painter_algothimn" style="zoom:75%;" />
+
+#### 2) 对late-Z的优化
+
+​	像素处理阶段，片元被着色后(fragmet shader)，通过深度测试，才转换为像素，显示在屏幕上。
+
+​	因此，被着色后的片元有可能被舍弃，这就引起了**过渡绘制(OverDraw)**。
+
+​	下述几个方案都是为了优化过渡绘制，提升效率。
+
+##### 2.1) early-z
+
+​	early-z是GPU硬件层的优化，在**光栅化后**和**片元着色前**添加early-z阶段。
+
+​	early-z执行的操作和late-z完全一样，但early-z的优化效果**不稳定**。
+
+###### 2.1.1) early-z被关闭
+
+​	① 手动**写入深度值**；② **开启alpha test**；③ **执行丢弃像素操作**。
+
+​	若执行上述操作，GPU就会关闭early-z，直到下一次clear z-buffer。
+
+​	这些操作在**片元着色和late-z之间执行**，会修改z-buffer中的值，导致early-z的结果不正确。
+
+###### 2.1.2) early-z不稳定
+
+​	若按由近及远的顺序绘制，early-z可以完美避免过度绘制；
+
+​	若由远及近绘制，early-z不起任何作用。
+
+##### 2.2) z-culling
+
+​	z-culling是GPU硬件层的优化。
+
+###### 2.2.1) z-culling和early-z的区别
+
+​	early-z以pixel-quad为单位，**逐像素**比较；
+
+​	z-culling以tile为单位，按tile**整体**进行比较。其中，tile即tile based rendering(TBR)中的概念。
+
+###### 2.2.2) z-culling比较方式
+
+​	获取当前tile的深度最值：$Z^{tile}_{min}$、$Z^{tile}_{max}$；
+
+​	获取tile所属的深度缓冲区的最值：$Z_{min}$、$Z_{max}$；
+
+​	若$Z^{tile}_{max} < Z_{min}$，则tile全部可见，保留整个tile，并在late-z阶段省去读缓冲的操作，直接进行写buffer；
+
+​	若$Z^{tile}_{min} > Z_{max}$，则tile全部不可见，丢弃整个tile；
+
+​	对于其他情况，则交给后续的late-z判断。
+
+​	z-culling所需要的比对数据储存在on-chip缓存中的某个固定区域，特点即是容量小但速度快。
+
+​	由于在z-culling阶段，对深度缓存是只读的，所以**不会**因为① 手动写入深度值；② 开启alpha test；③ 执行丢弃像素操作，导致z-buffer修改，导致测试失效。因此z-culling弥补了early-z的第一个缺点。
+
+##### 2.3) z-prepass
+
+​	z-perpass是软件层的技术，主要配合early-z使用，优化early-z的第二个缺点：不稳定。
+
+​	z-prepass思路类似延迟渲染：使用**两个pass**，第一个pass渲染时**只写入深度**；第二个pass关闭深度写入，设置深度比较函数为“**相等**”。
+
+​	z-prepass**必须配合early-z使用**。若和late-z配合使用，那么无用的片元仍然会经历片元着色，造成大量计算的浪费。
 
 ### 3 坐标变换流程
 
+<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_coordinate.png" alt="cg_coordinate" style="zoom:90%;" />
+
+​	$局部坐标\stackrel{(1)模型矩阵}{\longrightarrow}世界坐标 \stackrel{(2)相机矩阵}{\longrightarrow} 视图坐标 \stackrel{(3)投影矩阵}{\longrightarrow} 裁剪坐标 \stackrel{(4)透视除法}{\longrightarrow} 标准设备空间(NDC) \stackrel{(5)视口变换}{\longrightarrow} 窗口坐标$
+
+​	其中，第三步透视变换包含两个步骤：$ 投影矩阵=\left\{ \begin{matrix} 相似变换 \\ X、Y、Z三轴线性插值至[-1,1]\end{matrix} \right.$
+
 <img src="./pic/cg_matrix_flow.png" alt="cg_matrix_flow" style="zoom:100%;" />
-
-​	$世界空间 \stackrel{(1)相机矩阵}{\longrightarrow} 相机空间 \stackrel{(2)投影矩阵}{\longrightarrow} 裁剪空间CVV \stackrel{(3)透视除法}{\longrightarrow} 普通坐标 \stackrel{(4)视口变换}{\longrightarrow} 窗口坐标$
-
-​	其中，第二步透视变换包含两个步骤：$ 投影矩阵=\left\{ \begin{matrix} 相似变换 \\ X、Y、Z三轴线性插值至[-1,1]\end{matrix} \right.$
 
 ### 4 相机变换
 

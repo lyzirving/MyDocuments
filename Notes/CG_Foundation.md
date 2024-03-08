@@ -290,41 +290,73 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 ​	通过ray和三维空间的三角面求交，来完成拾取。
 
+## PBR
+
+### 1 渲染方程的物理意义
+
+### 2 PBR 里面的 D、F、G 项？菲涅尔项会带来怎样的视觉效果？
+
+### 3 PBR 材质贴图多，纹理槽位不够应该怎么处理
+
 ## 算法应用
 
-### 1 判断多边形的凹凸性
+### 1 点和射线的距离
 
-​	依次顺时针遍历多边形的顶点。若向量的叉积保持一致，则是凸多边形，反之是凹多边形。
+​	本小节参考自[这里](https://blog.csdn.net/LIQIANGEASTSUN/article/details/119598965)。
 
-​	求$\vec{p_{0}p_{1}}\times\vec{p_{0}p_{2}}$：
+​	点和射线有如下四种位置关系：
 
-```c++
-double cross(Point& p1, Point& p2, Point& p0)
-{
-    return (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
-}
-```
+<img src=".\pic\cg_ray_point.png" alt="cg_ray_point" style="zoom:75%;" align="left" /><img src=".\pic\cg_ray_point_1.png" alt="cg_ray_point" style="zoom:75%;" />
 
-​	判断是否为凸多边形。若Polygon是顺时针排序，叉乘结果应该小于0；若Polygon是逆指针排序，叉乘结果应该大于0：
 
-```c++
-bool isConvexPolygon(QVector<Point> Polygon)
-{
-    int len = Polygon.size();
-    int s = 0, e = len;
-    if(e == 2)
-        return true;
-    while (s <= e-3) {
-        if (cross(Polygon[s+1], Polygon[s+2],Polygon[s]) < 0)
-            s++;
-        else 
-            return false;
-    }
-    return true;
-}
-```
 
-### 2 判断任意点在凸多边形内部/外部
+<img src=".\pic\cg_ray_point_2.png" alt="cg_ray_point" style="zoom:75%;" align="left" /><img src=".\pic\cg_ray_point_3.png" alt="cg_ray_point" style="zoom:75%;" />
+
+#### 1) 点到射线的垂足坐标
+
+$\vec{PO}=0 - P$;
+
+$dot = \vec{PO}\cdot\vec{Ray}$
+
+$D = P + dot*\vec{Ray}$
+
+#### 2) 点到射线的距离
+
+​	两点先验知识：
+
+​	① 向量叉积模长公式：$|\vec{a}\otimes\vec{b}|=|\vec{a}||\vec{b}|sin\theta$。
+
+​	② 平行四边形面积公式：$S=ab*sin\theta$，其中a、b是平行四边形的相邻边长度，为标量。
+
+### 2 射线和三角形求交
+
+#### 1) 解析法
+
+​	假设射线和三角形所在平面的交点为p，在平面上任取一点a，有$(p-a)\cdot\vec{n}=0$，可计算求得点p。
+
+​	然后通过叉积法判断点p是否在三角形内部：
+
+<img src=".\pic\cg_algorithmn.png" alt="cg_algorithmn" style="zoom:85%;" />
+
+​	依次求解$\vec{AP} \otimes \vec{AB}$、$\vec{BP} \otimes \vec{BC}$、$\vec{CP} \otimes \vec{CA}$，若结果向量的方向一致，则在三角形内部。
+
+#### 2) moller-Trumbore射线三角相交算法
+
+​	一种快速计算射线与三角形在三个维度上的交点的方法，通过向量与矩阵计算可以快速得出交点与重心坐标，而无需对包含三角形的平面方程进行预计算。算法推导[这里](https://blog.csdn.net/zhanxi1992/article/details/109903792)。
+
+### 3 射线和球求交
+
+#### 1) 解析法
+
+​	将射线代入球的解析表达式，解方程，求解出交点坐标。
+
+#### 2) 几何法
+
+​	已知射线起点o和方向p，球的圆心为c，球的半径为r。
+
+​	从c作到射线的垂线，求出距离h。若$h<=r$，则射线与球有交点。
+
+### 4 判断任意点在凸多边形内部/外部
 
 ​	射线法、转角法参考[此处](https://blog.csdn.net/WilliamSun0122/article/details/77994526)。
 
@@ -363,6 +395,42 @@ bool isConvexPolygon(QVector<Point> Polygon)
 ​	对于方向向上的边，如果穿过射线，那么P是在有向边的左侧；对于方向向下的边，如果穿过射线，那么P在有向边的右侧。
 
 <img src=".\pic\cg_intersect_turning_angle_optimize_1.png" alt="cg_intersect_turning_angle_optimize_1" style="zoom:75%;" />
+
+### 5 判断多边形的凹凸性
+
+​	依次顺时针遍历多边形的顶点。若向量的叉积保持一致，则是凸多边形，反之是凹多边形。
+
+​	求$\vec{p_{0}p_{1}}\times\vec{p_{0}p_{2}}$：
+
+```c++
+double cross(Point& p1, Point& p2, Point& p0)
+{
+    return (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
+}
+```
+
+​	判断是否为凸多边形。若Polygon是顺时针排序，叉乘结果应该小于0；若Polygon是逆指针排序，叉乘结果应该大于0：
+
+```c++
+bool isConvexPolygon(QVector<Point> Polygon)
+{
+    int len = Polygon.size();
+    int s = 0, e = len;
+    if(e == 2)
+        return true;
+    while (s <= e-3) {
+        if (cross(Polygon[s+1], Polygon[s+2],Polygon[s]) < 0)
+            s++;
+        else 
+            return false;
+    }
+    return true;
+}
+```
+
+## 纹理贴图
+
+## 抗锯齿技术
 
 ## ShadowMap
 

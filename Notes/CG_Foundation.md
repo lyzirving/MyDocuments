@@ -384,7 +384,98 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 ​	渲染方程在理论上给出了一个完美的结果。各种各样的渲染技术，是这个理想结果的近似。
 
-​	渲染方程的物理基础是**能量守恒定律**：
+#### 1) 辐射度量学概念
+
+##### 1.1) 辐射通量
+
+​	**辐射通量**/**辐射功率** $\Phi$ (Radiant Power或Radiant Flux)：表示**单位时间**从表面**发射**或**到达**表面的总能量流量，单位为瓦(W，1W = 1 J/s)
+
+​	比如，可以说光源发射出50瓦的辐射功率，或者有20瓦的辐射功率入射到桌子上。
+
+##### 1.2) 立体角
+
+​	立体角(Solid Angle)是弧度在三维空间的延伸。
+
+​	二维中，弧度表示为：$\theta = \frac{l}{r}$，其中$l$是弧度对应的弧长，$r$是圆的半径。
+
+​	三维中，立体角是**有体积的方向**：观察者站在圆心，望向物体的方向，物体在单位圆表面投影的面积的值，就是立体角。如下所示：
+
+<img src=".\pic\cg_pbr_solid_angle.png" alt="cg_pbr_solid_angle" style="zoom:50%;" />
+
+##### 1.3) 辐射强度
+
+​	辐射强度 $I$ (Radiant Intensity)：单位立体角上的辐射通量 / **power per solid angle**，即$I = \frac{d\Phi}{d\omega}$，其几何意义：光源在任意方向上的亮度。
+
+<img src=".\pic\cg_pbr_radiant_intensity.png" alt="cg_pbr_radiant_intensity" style="zoom:60%;" />
+
+##### 1.4) 辐照度
+
+​	辐照度(Irradiance)：单位面积的辐射通量 / **power per unit area**，即表面被四面八方的光照射的总量，是**被辐射**的意思。
+
+​	接受光线的**有效方向**必须和**物体表面垂直**，若不垂直，需要通过**投影**计算出有效光照。
+
+##### 1.5) 辐射度
+
+​	辐射度(Radiance)：表面在单位立体角、单位投影面积上发射、反射、接受的光的功率，即power per solid angle per area。
+
+​	辐射度描述如何在光**传播过程中**，度量其能量。计算如下：$L(p,\omega)=\frac{d^{2}\Phi(p,\omega)}{d\omega dAcos\theta}$。$d\omega$表示立体角，$dAcos\theta$表示投影面积。
+
+<img src=".\pic\cg_pbr_radiance.png" alt="cg_pbr_radiance" style="zoom:70%;" />
+
+#### 2) 渲染方程 / 反射方程
+
+<img src=".\pic\cg_reflection_equation.png" alt="cg_reflection_equation" style="zoom:80%;" />
+
+​	渲染方程描述**光能在场景中流转的方程**，它基于**能量守恒定律**，在理论上给出了一个完美的光能求解结果。		
+
+​	渲染方程**物理意义**：在某个视点看向特定表面，看到的①**出射光**$\omega_{o}$ / 辐照度(Irradiance)由表面的②**BRDF**和表面接收的**③各方向入射光的Radiance**求和得到。
+
+​	各个参数如下：
+
+- 辐射度Radiance：$L_{i}(p,\omega_{i})$。计算时，当表面积足够小时，$p$视作点。当立体角足够小时，$\omega$视作向量。
+- 表面法线和光线夹角：$n\cdot\omega_{i}$。
+- BRDF：$f_{r}(p, \omega_{i},\omega_{o})$，表示表面$p$在入射方向$\omega_{i}$和出射方向$\omega_{o}$的反射率，BRDF类似于权重，它基于表面材质的属性。
+- $L_{o}(p,\omega_{o})$：是**辐照度**，即该表面$p$接受所在半球所有方向的光照后，在$\omega_{o}$方向上产生的辐射量。
+
+​	由于渲染方程没有解析解，因此使用**数值解**来求其积分：**黎曼求和方程**，伪代码如下：
+
+```c++
+int steps = 100;
+int sum = 0.f;
+vec3 P  = ...;
+vec3 Wo = ...;
+vec3 N  = ...;
+float dW = 1.f / steps;
+for(int i = 0; i < steps; i++)
+{
+    vec3 Wi = NextIncomingLightDir(i);
+    sum += Fr(P, Wi, Wo) * L(P, Wi) * dot(N, Wi) * dW;
+}
+```
+
+### 3 BRDF
+
+#### 1) 几何意义
+
+​	BRDF(Bidirectional Reflectance Distribution Function)：双向反射分布函数，描述物体表面**如何反射光线**的方程。
+
+​	BRDF的输入：入射方向$\omega_{i}$、出射方向$\omega_{o}$、表面法向$n$和表面粗糙度$\alpha$。
+
+​	BRDF的输出：输出一个**权重**，表示当前材质下，入射光线$\omega_{i}$对角度为$\omega_{o}$的出射光线的影响。
+
+​	若表面是**完美光滑**的，那么与$\omega_{i}$对称的出射角度的BRDF应该为1，其余角度的BRDF为0。
+
+#### 2) Cook-Torrance BRDF
+
+<img src=".\pic\cg_pbr_cook_torrance_brdf.png" alt="cg_pbr_cook_torrance_brdf" style="zoom:100%;" />
+
+​	$k_{d}$是**折射光线**的比例，用于产生漫反射，漫反射的本质是**折射光次表面的散射**。
+
+​	$k_{s}$是**反射光线**的比例，用于产生高光。
+
+​	$f_{lambert}$是**漫反射项**，为常数：$f_{lambert}=\frac{c}{\pi}$，其中$c$是$albedo$或表面颜色(纹理)。当然，漫反射项还存在其他版本公式，它们渲染效果更好，但更消耗算力。Epic Games已经证明，对于实时渲染，$f_{lambert}=\frac{c}{\pi}$已经足够好了。
+
+​	$f_{cook-torrance}$是高光项：$f_{cook-torrance}=\frac{DFG}{4(\omega_{o}\cdot n)(\omega_{i} \cdot n)}$。其中$D$：法线分布方程，$F$：菲涅尔项，$G$：几何方程。
 
 ### 3 PBR 里面的 D、F、G 项？菲涅尔项会带来怎样的视觉效果？
 

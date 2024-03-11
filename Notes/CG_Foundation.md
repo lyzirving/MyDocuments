@@ -477,7 +477,7 @@ for(int i = 0; i < steps; i++)
 
 ​	$f_{cook-torrance}$是高光项：$f_{cook-torrance}=\frac{DFG}{4(\omega_{o}\cdot n)(\omega_{i} \cdot n)}$。其中$D$：法线分布方程，$F$：菲涅尔项，$G$：几何方程。
 
-### 3 PBR 里面的 D、F、G 项？菲涅尔项会带来怎样的视觉效果？
+#### 3) D、F、G项和菲涅尔项产生的视觉效果
 
 ## 算法应用
 

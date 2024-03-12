@@ -1378,3 +1378,59 @@ auto multiply(_Tx x, _Ty y)->decltype(x*y)
 ​	注意这里的auto没有做任何类型推断，只是用来表明这里使用的是C++11的**拖尾返回类型**`(trailing return type)`语法：函数返回类型在参数列表之后进行声明(在"->"之后)。
 
 ​	拖尾返回类型的优点：可以使用函数参数来声明函数返回类型。
+
+### 7 智能指针
+
+​	本小节参考自[这里](https://blog.csdn.net/ithiker/article/details/51532484)。
+
+#### 1) 简介
+
+​	std::unique_ptr：**独享**被管理对象，同一时刻只能有一个unique_ptr拥有对象的所有权，当其被赋值时对象的所有权也发生**转移**，当其被销毁时被管理对象也自动被销毁。
+
+​	std::shared_ptr：**共享**被管理对象，同一时刻可以有多个std::shared_ptr拥有对象的所有权，当最后一个shared_ptr对象销毁时，被管理对象自动销毁。
+
+​	std::weak_ptr：**不拥有**对象的所有权，但是它可以判断对象是否存在和返回指向对象的shared_ptr类型指针；它的用途之一是解决多个对象内部含有**std::shared_ptr循环指向**，导致对象无法释放的问题。
+
+#### 2) 类结构及其作用
+
+<img src=".\pic\c++_shared_ptr.png" alt="c++_shared_ptr" style="zoom:90%;" />
+
+- std::shared_ptr类结构
+
+​	shared_ptr内部含有一个指向**被管理对象(managed object)**T的指针以及一个\__shared_count类对象。
+
+​	\__shared_count类对象包含一个指向**管理对象(manager object)**的基类指针；
+
+​	管理对象由具有原子属性的\_M_use_count、\_M_weak_count、被管理对象T的指针、以及用来销毁被管理对象的deleter组成。
+
+​	\__M_use_count主要用来标记**被管理对象**的生命周期；
+
+​	\__M_weak_count主要用来标记**管理对象**的生命周期。
+
+<img src=".\pic\c++_shared_ptr_class.png" alt="c++_shared_ptr_class" style="zoom:50%;" />
+
+- std::weak_ptr类结构
+
+​	weak_ptr类结构和shared_ptr相似，不过管理对象的变为了\__weak_count(子类)。
+
+<img src=".\pic\c++_weak_ptr_class.png" alt="c++_weak_ptr_class" style="zoom:50%;" />
+
+- **两个被管理对象指针**
+
+​	在shared_ptr中，被管理对象的指针有**两个**。
+
+​	① shared_ptr直接包含的裸指针是为了实现一般指针的->,\*等操作；
+
+​	② \__shared_count间接包含的指针是为了管理对象的生命周期，回收相关资源。
+
+- **__weak_count**
+
+​	\__weak_count类相关的赋值、拷贝、析构只会影响到\_M_weak_count的值，对\_M_use_count没有影响；
+
+​	当\_M_weak_count为0时，释放管理对象，也就是说weak_ptr不影响被管理对象的生命周期。
+
+- 分享管理对象指针
+
+​	当weak_ptr、shared_ptr自身或相互赋值时，它们共享同一个管理对象指针。
+
+​	

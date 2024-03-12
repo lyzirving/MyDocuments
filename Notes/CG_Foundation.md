@@ -453,9 +453,46 @@ for(int i = 0; i < steps; i++)
 }
 ```
 
-### 3 BRDF
+### 3 BxDF
 
-#### 1) 几何意义
+​	BxDF一般而言是对BRDF、BTDF、BSDF、BSSRDF等几种双向分布函数的一个**统一的表示**。
+
+​	其中，BSDF可以看做BRDF和BTDF更一般的形式，而且BSDF = BRDF + BTDF。
+
+​	在上述这些BxDF中，BRDF最为简单，也最为常用。
+
+​	因为游戏和电影中的大多数物体都是不透明的，用BRDF就完全足够。而BSDF、BTDF、BSSRDF往往更多用于**半透明材质**和**次表面散射材质**。
+
+### 4 BRDF
+
+#### 1) Disney Principled BRDF 核心理念
+
+​	**着色模型是艺术导向（Art Directable）的，而不一定要是完全物理正确（physically correct）**，能让美术同学用非常直观的少量参数，以及非常标准化的工作流，快速实现涉及大量不同材质的真实感的渲染工作。
+
+​	核心理念如下：
+
+1. 应使用直观的参数，而不是物理类的晦涩参数。
+2. 参数应尽可能少。
+3. 参数在其合理范围内应该为0到1。
+4. 允许参数在有意义时超出正常的合理范围。
+5. 所有参数组合应尽可能健壮和合理。
+
+#### 2) Disney Principled BRDF 参数
+
+- **baseColor（基础色）**：表面颜色，通常由纹理贴图提供。
+
+- **subsurface（次表面）**：使用次表面近似控制漫反射形状。
+- **metallic（金属度）**：金属（0 = 电介质，1 = 金属）。这是两种不同模型之间的线性混合。金属模型没有漫反射成分，并且还具有等于基础色的着色入射镜面反射。
+- **specular（镜面反射强度）**：入射镜面反射量。用于取代折射率。
+- **specularTint（镜面反射颜色）**：对美术控制的让步，用于对基础色（base color）的入射镜面反射进行颜色控制。掠射镜面反射仍然是非彩色的。
+- **roughness（粗糙度）**：表面粗糙度，控制漫反射和镜面反射。
+- **anisotropic（各向异性强度）**：各向异性程度。用于控制镜面反射高光的纵横比。（0 =各向同性，1 =最大各向异性）
+- **sheen（光泽度）**：一种额外的掠射分量（grazing component），主要用于布料。
+- **sheenTint（光泽颜色）**：对sheen（光泽度）的颜色控制。
+- **clearcoat（清漆强度）**：有特殊用途的第二个镜面波瓣（specular lobe）。
+- **clearcoatGloss（清漆光泽度）**：控制透明涂层光泽度，0 =“缎面（satin）”外观，1 =“光泽（gloss）”外观。
+
+#### 3) BRDF的几何意义
 
 ​	BRDF(Bidirectional Reflectance Distribution Function)：双向反射分布函数，描述物体表面**如何反射光线**的方程。
 
@@ -465,19 +502,71 @@ for(int i = 0; i < steps; i++)
 
 ​	若表面是**完美光滑**的，那么与$\omega_{i}$对称的出射角度的BRDF应该为1，其余角度的BRDF为0。
 
-#### 2) Cook-Torrance BRDF
+#### 4) 最广泛使用的模型：Cook-Torrance BRDF
+
+​	Microfacet Cook-Torrance BRDF是实践中**使用最广泛**的模型，实际上也是人们可以想到的**最简单**的微平面模型。
+
+​	它仅对几何光学系统中的单层微表面上的单个散射进行建模，**没有考虑多次散射**，**分层材质**，以及**衍射**。
 
 <img src=".\pic\cg_pbr_cook_torrance_brdf.png" alt="cg_pbr_cook_torrance_brdf" style="zoom:100%;" />
 
-​	$k_{d}$是**折射光线**的比例，用于产生漫反射，漫反射的本质是**折射光次表面的散射**。
+##### 4.1) 折射光、反射光比例
 
-​	$k_{s}$是**反射光线**的比例，用于产生高光。
+​	**折射光线比例**$k_{d}$：用于产生漫反射，漫反射的本质是**折射光次表面的散射**。
 
-​	$f_{lambert}$是**漫反射项**，为常数：$f_{lambert}=\frac{c}{\pi}$，其中$c$是$albedo$或表面颜色(纹理)。当然，漫反射项还存在其他版本公式，它们渲染效果更好，但更消耗算力。Epic Games已经证明，对于实时渲染，$f_{lambert}=\frac{c}{\pi}$已经足够好了。
+​	**反射光线比例**$k_{s}$：用于产生高光。
 
-​	$f_{cook-torrance}$是高光项：$f_{cook-torrance}=\frac{DFG}{4(\omega_{o}\cdot n)(\omega_{i} \cdot n)}$。其中$D$：法线分布方程，$F$：菲涅尔项，$G$：几何方程。
+##### 4.2) 漫反射模型
 
-#### 3) D、F、G项和菲涅尔项产生的视觉效果
+​	Diffuse BRDF可分为传统型和基于物理型两大类。其中，传统型主要是上述提及的Lambert。
+
+​	其他模型渲染效果更好，但更消耗算力。Epic Games已证明，对于实时渲染，传统的Lambert模型已经足够。
+
+​	$f_{lambert}=\frac{c}{\pi}$，其中$c$是$albedo$或表面颜色(纹理)。
+
+##### 4.3) 高光模型
+
+###### 4.3.1) 正确的法线方向	
+
+​	每个表面点将来自给定进入方向的光反射到单个出射方向，该出射方向取决于微观几何法线（microgeometry normal）**m** 的方向。
+
+​	在计算BRDF项时，指定光方向 **l(或$\omega_{i}$)** 和视图方向 **v(或$\omega_{o}$)** 。这意味着，对于所有小平面，只有可以**将 l 反射到 v 的那些小平面**，才有助于BRDF。其他方向有正有负，积分之后，相互抵消。
+
+​	这些有助于BRDF的小平面法线，就是**有效的/正确的**法线方向。
+
+​	如下图所示，正确的 $m$ 正好位于 $l$ 和 $v$ 的中间，只有当 $m = h$ 时，表面的点才会把 $l$ 反射到 $v$ 上，其他点对BRDF没有贡献。
+
+<img src=".\pic\cg_pbr_brdf_normal.png" alt="cg_pbr_brdf_normal" style="zoom:80%;" />
+
+###### 4.3.2) 被遮蔽的光
+
+​	不是所有能被反射到 $v$ 的光都会对BRDF做贡献。这些光的一部分可能会因为 $l$ 方向或 $v$ 方向的遮挡，从镜面反射中抹除。
+
+<img src=".\pic\cg_pbr_brdf_shadow.png" alt="cg_pbr_brdf_shadow" style="zoom:75%;" />
+
+<center> l方向的遮挡——阴影</center>
+
+<img src=".\pic\cg_pbr_brdf_mask.png" alt="cg_pbr_brdf_mask" style="zoom:75%;" />
+
+<center> v方向的遮挡——掩蔽</center>
+
+​	在阴影区没有接收 $l$ 的直射光，但它接受了其他表面区域的反射光。但microfacet理论忽略了这些相互反射。
+
+<img src=".\pic\cg_pbr_brdf_interact_reflection.png" alt="cg_pbr_brdf_interact_reflection" style="zoom:75%;" />
+
+<center>忽略了其他表面的相互反射</center>
+
+###### 4.3.3) 公式解读
+
+​	$f_{cook-torrance}=\frac{D(h)F(v,h)G(l,v,h)}{4(l\cdot n)(v \cdot n)}$。
+
+​	$D(h)$：法线分布函数(Normal Distribution Function)，描述微表面**正确朝向**的法线的分布概率。**正确朝向**指能够将来自 $l$ 的光反射到观察方向 $v$ 的法线方向。
+
+​	$F(v, h)$：菲涅尔方程(Fresnel)，描述不同的表面角下**反射的光线的占比**。随着观察角度增大并接近掠射角(贴地角)，反射会逐渐增强。
+
+​	$G(l, v, h)$：几何函数，描述微平面自成阴影的属性，即当m = h时，未被遮蔽的表面点的百分比。
+
+​	分母$4(l\cdot n)(v \cdot n)$：校正因子（correctionfactor），作为微观几何的局部空间和整个宏观表面的局部空间之间变换的微平面量的校正。
 
 ## 算法应用
 
@@ -819,3 +908,6 @@ float closestDepth = texture(depthMap, sampleVec).r;
 ### 3 vs、fs开销大，如何优化
 
 ### 4 PBR 材质贴图多，纹理槽位不够应该怎么处理
+
+- 合并多个属性到一个通道，比如roughness和metallic可以存在 8 bit 纹理的高低4 bit上。
+- 虚拟纹理，将小贴图合并成大贴图，按需调入。

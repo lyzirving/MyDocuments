@@ -1,15 +1,15 @@
-## 数学基础
+# 数学基础
 
-### 1 叉乘
+## 1 叉乘
 
-#### 1) 叉乘的定义
+### 1) 叉乘的定义
 
 ​	向量叉乘的结果由两个属性定义：
 
 - 模长：$|\vec{a} \times \vec{b}| = |\vec{a}| \cdot |\vec{b}| \cdot sin\theta$，其中$\theta$是两个向量的夹角，$0 \leq \theta \leq 180$。
 - 方向：$\vec{c}= \vec{a} \times \vec{b}$的方向与$\vec{a}$和$\vec{b}$所在平面垂直，且遵守`右手法则`：当右手的手指从$\vec{a}$以不超过180°的角度旋转到$\vec{b}$时，竖起的大拇指方向则是$\vec{c}$的方向。
 
-#### 2) 补充性质
+### 2) 补充性质
 
 ​	二维平面上，有向量$\vec{P}=(x_{1},y_{1})$和向量$\vec{Q}=(x_{2},y_{2})$，则有$\vec{P}\times\vec{Q}=(x_{1}y_{2} - x_{2}y_{1})$。
 
@@ -19,9 +19,7 @@
 
 ​	若$\vec{P}\times\vec{Q} = 0$，$\vec{P}$和$\vec{Q}$在同一条直线上，可能同向，也可能异向。
 
-## 矩阵
-
-### 1 齐次坐标
+## 2 齐次坐标
 
 ​	向量：$\vec{v} = \begin{pmatrix}a\\b\\c\\0\end{pmatrix}$		点：$p = \begin{pmatrix}a\\b\\c\\1\end{pmatrix}$
 
@@ -35,7 +33,7 @@
 
 ​	旋转和缩放对于向量和点都有意义，可用类似上面齐次表示来检测。因此，齐次坐标使仿射变换更方便。
 
-### 2 渲染管线
+# 渲染管线
 
 ​	图形渲染管线：原始图形数据途经输送管道，经过各种变化处理最终出现在屏幕的过程。
 
@@ -53,7 +51,7 @@
 
 <img src="./pic/cg_pipeline.png" alt="cg_pipeline" style="zoom:85%;" />
 
-#### 1) 管线概述
+## 1 管线概述
 
 - **图元组装**
 
@@ -87,7 +85,7 @@
 
 <img src="./pic/cg_painter_algothimn.png" alt="cg_painter_algothimn" style="zoom:75%;" />
 
-#### 2) 对late-Z的优化
+## 2 对late-Z的优化
 
 ​	像素处理阶段，片元被着色后(fragmet shader)，通过深度测试，才转换为像素，显示在屏幕上。
 
@@ -95,13 +93,13 @@
 
 ​	下述几个方案都是为了优化过渡绘制，提升效率。
 
-##### 2.1) early-z
+### 1) early-z
 
 ​	early-z是GPU硬件层的优化，在**光栅化后**和**片元着色前**添加early-z阶段。
 
 ​	early-z执行的操作和late-z完全一样，但early-z的优化效果**不稳定**。
 
-###### 2.1.1) early-z被关闭
+#### 1.1) early-z被关闭
 
 ​	① 手动**写入深度值**；② **开启alpha test**；③ **执行丢弃像素操作**。
 
@@ -109,23 +107,23 @@
 
 ​	这些操作在**片元着色和late-z之间执行**，会修改z-buffer中的值，导致early-z的结果不正确。
 
-###### 2.1.2) early-z不稳定
+#### 1.2) early-z不稳定
 
 ​	若按由近及远的顺序绘制，early-z可以完美避免过度绘制；
 
 ​	若由远及近绘制，early-z不起任何作用。
 
-##### 2.2) z-culling
+### 2) z-culling
 
 ​	z-culling是GPU硬件层的优化。
 
-###### 2.2.1) z-culling和early-z的区别
+#### 2.1) z-culling和early-z的区别
 
 ​	early-z以pixel-quad为单位，**逐像素**比较；
 
 ​	z-culling以tile为单位，按tile**整体**进行比较。其中，tile即tile based rendering(TBR)中的概念。
 
-###### 2.2.2) z-culling比较方式
+#### 2.2) z-culling比较方式
 
 ​	获取当前tile的深度最值：$Z^{tile}_{min}$、$Z^{tile}_{max}$；
 
@@ -141,7 +139,7 @@
 
 ​	由于在z-culling阶段，对深度缓存是只读的，所以**不会**因为① 手动写入深度值；② 开启alpha test；③ 执行丢弃像素操作，导致z-buffer修改，导致测试失效。因此z-culling弥补了early-z的第一个缺点。
 
-##### 2.3) z-prepass
+### 3) z-prepass
 
 ​	z-perpass是软件层的技术，主要配合early-z使用，优化early-z的第二个缺点：不稳定。
 
@@ -149,7 +147,7 @@
 
 ​	z-prepass**必须配合early-z使用**。若和late-z配合使用，那么无用的片元仍然会经历片元着色，造成大量计算的浪费。
 
-### 3 坐标变换流程
+## 3 坐标变换流程
 
 <img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_coordinate.png" alt="cg_coordinate" style="zoom:90%;" />
 
@@ -159,9 +157,9 @@
 
 <img src="./pic/cg_matrix_flow.png" alt="cg_matrix_flow" style="zoom:100%;" />
 
-### 4 相机变换
+## 4 相机变换
 
-### 5 透视变换
+## 5 透视变换
 
 ​	世界空间的点经过相机矩阵后，被转换到相机空间。此时，多边形可能会被视椎体裁剪，但在不规则体中裁剪很难，所以裁剪被安排到规则观察体(`Canonical View Volume, CVV`)中(`齐次裁剪空间`)。
 
@@ -172,7 +170,7 @@
 
 <img src="./pic/cg_matrix_1.png" alt="cg_matrix_1" style="zoom:100%;" />
 
-#### 1) 投影点坐标
+### 1) 投影点坐标
 
 <img src="./pic/cg_matrix_2.png" alt="cg_matrix_2" style="zoom:100%;" />
 
@@ -192,7 +190,7 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, z)\qquad\qquad\qquad\qquad\qquad\qquad\qquad\
 
 ​	公式(1)其中x, y, z是相机空间点的坐标，N是近平面的距离。
 
-#### 2) 用齐次坐标表达投影点
+### 2) 用齐次坐标表达投影点
 
 ​	公式(1)有点生搬硬套的意思，现开始结合CVV进行思考，把它写得在数学上更优雅，更易于程序处理。如前所述，第3个分量可以是任意值，因此有公式(2)：
 
@@ -218,17 +216,17 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, -\frac{az+b}{z})\qquad\qquad\qquad\qquad\qqua
 
 - CVV是一个x, y, z的范围为[-1, 1]的规则体，便于进行多边形裁剪。我们可以适当的选择系数a和b，使得![fig19.GIF](https://p-blog.csdn.net/images/p_blog_csdn_net/popy007/fig19.GIF)这个式子在z = -N的时候值为-1，在z = -F的时候值为1，从而在z方向上构建CVV。
 
-#### 3) 投影矩阵
+### 3) 投影矩阵
 
 ​	投影矩阵需要在x, y, z三个方向上构建CVV，CVV中的齐次左边变为普通坐标后，最终形式为：<img src="./pic/cg_matrix_5.png" alt="cg_matrix_5" style="zoom:100%;" />
 
-##### 3.1) 在Z方向构建CVV
+#### 3.1) 在Z方向构建CVV
 
 ​	z的范围是[-N, -F]，因此有：
 
 <img src="./pic/cg_matrix_cvv_z.png" alt="cg_matrix_cvv_z" style="zoom:100%;" align="center" />
 
-##### 3.2) 在X和Y方向构建CVV
+#### 3.2) 在X和Y方向构建CVV
 
 ​	$-N\frac{x}{z}$是投影平面上的点，范围是[left, right]，$x'$是标准化后的点，范围是[-1, 1]。
 
@@ -236,11 +234,11 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, -\frac{az+b}{z})\qquad\qquad\qquad\qquad\qqua
 
 <img src="./pic/cg_matrix_cvv_x.png" alt="cg_matrix_cvv_x" style="zoom:100%;" align="center"/>
 
-##### 3.3) 标准化后的投影点坐标
+#### 3.3) 标准化后的投影点坐标
 
 <img src="./pic/cg_matrix_cvv_std.png" alt="cg_matrix_cvv_std" style="zoom:100%;" />
 
-##### 3.4) 坐标反推投影矩阵
+#### 3.4) 坐标反推投影矩阵
 
 ​	首先，做透视除法的逆处理：每个分量乘以-z，得到：
 
@@ -256,15 +254,15 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, -\frac{az+b}{z})\qquad\qquad\qquad\qquad\qqua
 
 ​	投影失真的解决方法就是之后的`视口变换`：把归一化的顶点按照和`投影面上相同的比例`变换到视口中，从而解除透视投影变换带来的失真现象。
 
-### 6 3d拾取
+## 6 3d拾取
 
-#### 1) 屏幕上的点转换到视口坐标
+### 1) 屏幕上的点转换到视口坐标
 
 ​	屏幕坐标原点在屏幕左上角，x向右，y向下；
 
 ​	视口坐标原点在左下角，x向右，向上。
 
-#### 2) 视口中的点转换到投影平面上
+### 2) 视口中的点转换到投影平面上
 
 ​	投影平面的点被实施视口变换(线性插值)后，被变换到视口中。在这里，我们要实施一个逆变换。
 
@@ -280,7 +278,7 @@ $\frac{X_{p1} -(-1)}{1-(-1)} = \frac{X_{p2}-Left_{prj}}{Right_{prj}-Left{prj}}$
 
 $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}$
 
-#### 3) 向三维空间拓展
+### 3) 向三维空间拓展
 
 <img src="./pic/cg_matrix_3d_pickup.png" alt="cg_matrix_3d_pickup" style="zoom:100%;" />
 
@@ -290,9 +288,9 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 ​	通过ray和三维空间的三角面求交，来完成拾取。
 
-## PBR
+# PBR
 
-### 1 PBR核心理论
+## 1 PBR核心理论
 
 ​	基于物理的渲染(Physically Based Rendering，PBR)是指使用基于**物理原理**和**微平面理论**建模的着色/光照模型。
 
@@ -300,7 +298,7 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 <img src=".\pic\cg_pbr_scope.png" alt="cg_pbr_scope" style="zoom:70%;" />
 
-#### 1) 基础概念
+### 1) 基础概念
 
 - 微平面理论（Microfacet Theory）
 
@@ -346,9 +344,9 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
   <img src=".\pic\cg_pbr_theory_0.png" alt="cg_pbr_theory_0" style="zoom:75%;" />
 
-#### 2) 光与非光学平坦表面的交互原理
+### 2) 光与非光学平坦表面的交互原理
 
-##### 2.1) 反射
+#### 2.1) 反射
 
 ​	光在与非光学平坦表面（non-optical-flat-surface）的交互时，非光学平坦表面表现得像一个**微小的光学平面的大集合**。
 
@@ -368,31 +366,31 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 <img src=".\pic\cg_pbr_mutiple_reflection.png" alt="cg_pbr_mutiple_reflection" style="zoom:50%;" />
 
-##### 2.2) 折射
+#### 2.2) 折射
 
 ​	对于金属，折射光会被立刻吸收；对于非金属(电介质或绝缘体)，一旦光在内部折射，会表现出**吸收**和**散射**两种行为。
 
 <img src=".\pic\cg_pbr_absorb.png" alt="cg_pbr_absorb" style="zoom:50%;" align="left" /><img src=".\pic\cg_pbr_scattering.png" alt="cg_pbr_scattering" style="zoom:50%;" />
 
-##### 2.3) 漫反射和次表面反射本质相同
+#### 2.3) 漫反射和次表面反射本质相同
 
 ​	漫反射和次表面散射其实是相同物理现象，本质都是**折射光**的**次表面散射**的结果。
 
 ​	它们的区别是相对于观察尺度的散射距离：散射距离相较于像素来说微不足道，次表面散射便可以近似为漫反射。
 
-### 2 渲染方程
+## 2 渲染方程
 
 ​	渲染方程在理论上给出了一个完美的结果。各种各样的渲染技术，是这个理想结果的近似。
 
-#### 1) 辐射度量学概念
+### 1) 辐射度量学概念
 
-##### 1.1) 辐射通量
+#### 1.1) 辐射通量
 
 ​	**辐射通量**/**辐射功率** $\Phi$ (Radiant Power或Radiant Flux)：表示**单位时间**从表面**发射**或**到达**表面的总能量流量，单位为瓦(W，1W = 1 J/s)
 
 ​	比如，可以说光源发射出50瓦的辐射功率，或者有20瓦的辐射功率入射到桌子上。
 
-##### 1.2) 立体角
+#### 1.2) 立体角
 
 ​	立体角(Solid Angle)是弧度在三维空间的延伸。
 
@@ -402,19 +400,19 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 <img src=".\pic\cg_pbr_solid_angle.png" alt="cg_pbr_solid_angle" style="zoom:50%;" />
 
-##### 1.3) 辐射强度
+#### 1.3) 辐射强度
 
 ​	辐射强度 $I$ (Radiant Intensity)：单位立体角上的辐射通量 / **power per solid angle**，即$I = \frac{d\Phi}{d\omega}$，其几何意义：光源在任意方向上的亮度。
 
 <img src=".\pic\cg_pbr_radiant_intensity.png" alt="cg_pbr_radiant_intensity" style="zoom:60%;" />
 
-##### 1.4) 辐照度
+#### 1.4) 辐照度
 
 ​	辐照度(Irradiance)：单位面积的辐射通量 / **power per unit area**，即表面被四面八方的光照射的总量，是**被辐射**的意思。
 
 ​	接受光线的**有效方向**必须和**物体表面垂直**，若不垂直，需要通过**投影**计算出有效光照。
 
-##### 1.5) 辐射度
+#### 1.5) 辐射度
 
 ​	辐射度(Radiance)：表面在单位立体角、单位投影面积上发射、反射、接受的光的功率，即power per solid angle per area。
 
@@ -422,7 +420,7 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 <img src=".\pic\cg_pbr_radiance.png" alt="cg_pbr_radiance" style="zoom:70%;" />
 
-#### 2) 渲染方程 / 反射方程
+### 2) 渲染方程 / 反射方程
 
 <img src=".\pic\cg_reflection_equation.png" alt="cg_reflection_equation" style="zoom:80%;" />
 
@@ -453,7 +451,7 @@ for(int i = 0; i < steps; i++)
 }
 ```
 
-### 3 BxDF
+## 3 BxDF
 
 ​	BxDF一般而言是对BRDF、BTDF、BSDF、BSSRDF等几种双向分布函数的一个**统一的表示**。
 
@@ -463,9 +461,9 @@ for(int i = 0; i < steps; i++)
 
 ​	因为游戏和电影中的大多数物体都是不透明的，用BRDF就完全足够。而BSDF、BTDF、BSSRDF往往更多用于**半透明材质**和**次表面散射材质**。
 
-### 4 BRDF
+## 4 BRDF
 
-#### 1) Disney Principled BRDF 核心理念
+### 1) Disney Principled BRDF 核心理念
 
 ​	**着色模型是艺术导向（Art Directable）的，而不一定要是完全物理正确（physically correct）**，能让美术同学用非常直观的少量参数，以及非常标准化的工作流，快速实现涉及大量不同材质的真实感的渲染工作。
 
@@ -477,7 +475,7 @@ for(int i = 0; i < steps; i++)
 4. 允许参数在有意义时超出正常的合理范围。
 5. 所有参数组合应尽可能健壮和合理。
 
-#### 2) Disney Principled BRDF 参数
+### 2) Disney Principled BRDF 参数
 
 - **baseColor（基础色）**：表面颜色，通常由纹理贴图提供。
 
@@ -492,7 +490,7 @@ for(int i = 0; i < steps; i++)
 - **clearcoat（清漆强度）**：有特殊用途的第二个镜面波瓣（specular lobe）。
 - **clearcoatGloss（清漆光泽度）**：控制透明涂层光泽度，0 =“缎面（satin）”外观，1 =“光泽（gloss）”外观。
 
-#### 3) BRDF的几何意义
+### 3) BRDF的几何意义
 
 ​	BRDF(Bidirectional Reflectance Distribution Function)：双向反射分布函数，描述物体表面**如何反射光线**的方程。
 
@@ -502,7 +500,7 @@ for(int i = 0; i < steps; i++)
 
 ​	若表面是**完美光滑**的，那么与$\omega_{i}$对称的出射角度的BRDF应该为1，其余角度的BRDF为0。
 
-#### 4) 最广泛使用的模型：Cook-Torrance BRDF
+### 4) 最广泛使用的模型：Cook-Torrance BRDF
 
 ​	Microfacet Cook-Torrance BRDF是实践中**使用最广泛**的模型，实际上也是人们可以想到的**最简单**的微平面模型。
 
@@ -510,13 +508,13 @@ for(int i = 0; i < steps; i++)
 
 <img src=".\pic\cg_pbr_cook_torrance_brdf.png" alt="cg_pbr_cook_torrance_brdf" style="zoom:100%;" />
 
-##### 4.1) 折射光、反射光比例
+#### 4.1) 折射光、反射光比例
 
 ​	**折射光线比例**$k_{d}$：用于产生漫反射，漫反射的本质是**折射光次表面的散射**。
 
 ​	**反射光线比例**$k_{s}$：用于产生高光。
 
-##### 4.2) 漫反射模型
+#### 4.2) 漫反射模型
 
 ​	Diffuse BRDF可分为传统型和基于物理型两大类。其中，传统型主要是上述提及的Lambert。
 
@@ -524,9 +522,9 @@ for(int i = 0; i < steps; i++)
 
 ​	$f_{lambert}=\frac{c}{\pi}$，其中$c$是$albedo$或表面颜色(纹理)。
 
-##### 4.3) 高光模型
+#### 4.3) 高光模型
 
-###### 4.3.1) 正确的法线方向	
+##### 4.3.1) 正确的法线方向	
 
 ​	每个表面点将来自给定进入方向的光反射到单个出射方向，该出射方向取决于微观几何法线（microgeometry normal）**m** 的方向。
 
@@ -538,7 +536,7 @@ for(int i = 0; i < steps; i++)
 
 <img src=".\pic\cg_pbr_brdf_normal.png" alt="cg_pbr_brdf_normal" style="zoom:80%;" />
 
-###### 4.3.2) 被遮蔽的光
+##### 4.3.2) 被遮蔽的光
 
 ​	不是所有能被反射到 $v$ 的光都会对BRDF做贡献。这些光的一部分可能会因为 $l$ 方向或 $v$ 方向的遮挡，从镜面反射中抹除。
 
@@ -556,7 +554,7 @@ for(int i = 0; i < steps; i++)
 
 <center>忽略了其他表面的相互反射</center>
 
-###### 4.3.3) 公式解读
+##### 4.3.3) 公式解读
 
 ​	$f_{cook-torrance}=\frac{D(h)F(v,h)G(l,v,h)}{4(l\cdot n)(v \cdot n)}$。
 
@@ -568,9 +566,9 @@ for(int i = 0; i < steps; i++)
 
 ​	分母$4(l\cdot n)(v \cdot n)$：校正因子（correctionfactor），作为微观几何的局部空间和整个宏观表面的局部空间之间变换的微平面量的校正。
 
-## 算法应用
+# 算法应用
 
-### 1 点和射线的距离
+## 1 点和射线的距离
 
 ​	本小节参考自[这里](https://blog.csdn.net/LIQIANGEASTSUN/article/details/119598965)。
 
@@ -582,7 +580,7 @@ for(int i = 0; i < steps; i++)
 
 <img src=".\pic\cg_ray_point_2.png" alt="cg_ray_point" style="zoom:75%;" align="left" /><img src=".\pic\cg_ray_point_3.png" alt="cg_ray_point" style="zoom:75%;" />
 
-#### 1) 点到射线的垂足坐标
+### 1) 点到射线的垂足坐标
 
 $\vec{PO}=0 - P$;
 
@@ -590,7 +588,7 @@ $dot = \vec{PO}\cdot\vec{Ray}$
 
 $D = P + dot*\vec{Ray}$
 
-#### 2) 点到射线的距离
+### 2) 点到射线的距离
 
 ​	两点先验知识：
 
@@ -606,9 +604,9 @@ $D = P + dot*\vec{Ray}$
 
 ​	取$\vec{PO}$和单位向量$\vec{PP'}$作平行四边形，那么底边$PP'$的高$OD=|PO|\times sin\theta$。
 
-### 2 射线和三角形求交
+## 2 射线和三角形求交
 
-#### 1) 解析法
+### 1) 解析法
 
 ​	假设射线和三角形所在平面的交点为p，在平面上任取一点a，有$(p-a)\cdot\vec{n}=0$，可计算求得点p。
 
@@ -618,27 +616,27 @@ $D = P + dot*\vec{Ray}$
 
 ​	依次求解$\vec{AP} \otimes \vec{AB}$、$\vec{BP} \otimes \vec{BC}$、$\vec{CP} \otimes \vec{CA}$，若结果向量的方向一致，则在三角形内部。
 
-#### 2) moller-Trumbore射线三角相交算法
+### 2) moller-Trumbore射线三角相交算法
 
 ​	一种快速计算射线与三角形在三个维度上的交点的方法，通过向量与矩阵计算可以快速得出交点与重心坐标，而无需对包含三角形的平面方程进行预计算。算法推导[这里](https://blog.csdn.net/zhanxi1992/article/details/109903792)。
 
-### 3 射线和球求交
+## 3 射线和球求交
 
-#### 1) 解析法
+### 1) 解析法
 
 ​	将射线代入球的解析表达式，解方程，求解出交点坐标。
 
-#### 2) 几何法
+### 2) 几何法
 
 ​	已知射线起点o和方向p，球的圆心为c，球的半径为r。
 
 ​	从c作到射线的垂线，求出距离h。若$h<=r$，则射线与球有交点。
 
-### 4 判断任意点在凸多边形内部/外部
+## 4 判断任意点在凸多边形内部/外部
 
 ​	射线法、转角法参考[此处](https://blog.csdn.net/WilliamSun0122/article/details/77994526)。
 
-#### 1) 射线法
+### 1) 射线法
 
 ​	以被测点Q为端点，向任意方向作射线(一般水平向右作射线)。统计该射线与多边形的交点数。如果为奇数，Q在多边形内；如果为偶数，Q在多边形外。
 
@@ -652,7 +650,7 @@ $D = P + dot*\vec{Ray}$
 
 ​	情况c)，射线和多边形的一边平行，该边应忽略不计。
 
-#### 2) 转角法
+### 2) 转角法
 
 <img src=".\pic\cg_intersect_turning_angle.png" alt="cg_intersect_turning_angle" style="zoom:30%;" />
 
@@ -662,7 +660,7 @@ $D = P + dot*\vec{Ray}$
 
 ​	转角法简单，但是由于涉及要使用反三角函数，会耗时，且造成较大的精度误差。
 
-#### 3) 转角法优化
+### 3) 转角法优化
 
 ​	从P点向右做射线R，如果边从射线R下方跨到上方，那么穿越+1，如果从上方跨到下方，则是-1。最终和为wn环绕数。
 
@@ -674,7 +672,7 @@ $D = P + dot*\vec{Ray}$
 
 <img src=".\pic\cg_intersect_turning_angle_optimize_1.png" alt="cg_intersect_turning_angle_optimize_1" style="zoom:75%;" />
 
-### 5 判断多边形的凹凸性
+## 5 判断多边形的凹凸性
 
 ​	依次顺时针遍历多边形的顶点。若向量的叉积保持一致，则是凸多边形，反之是凹多边形。
 
@@ -706,13 +704,13 @@ bool isConvexPolygon(QVector<Point> Polygon)
 }
 ```
 
-## 纹理
+# 纹理
 
-### 1 纹理环绕
+## 1 纹理环绕
 
 ​	设置纹理坐标采样超出范围时，采取什么行为(重复/镜像重复/插值到边缘等)。
 
-### 2 纹理过滤
+## 2 纹理过滤
 
 ​	纹理过滤方式实质就是采样方式。决定如何将纹理像素映射到纹理坐标，分为临近过滤和线性过滤。
 
@@ -730,11 +728,11 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 ​	临近过滤会产生颗粒状的图案，线性过滤会产生更平滑的效果。
 
-### 3 mipmap
+## 3 mipmap
 
 ​	本小节参考自[这里](https://blog.csdn.net/qq_42428486/article/details/118856697)。
 
-#### 1) 背景
+### 1) 背景
 
 ​	场景内，同一个物体，**在远处所占用的片段少，在近处占用的片段多**。
 
@@ -750,7 +748,7 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 ​	上述是因为没有均匀采样造成，若对于远处的小物体，对其纹理上所有纹素进行过滤，显示效果会不错。但GPU是承受不了这么大负载的，帧率会降低。
 
-#### 2) 原理
+### 2) 原理
 
 ​	将纹理划分为不同大小分辨率的纹理图集，每次缩小1/2划分；
 
@@ -758,7 +756,7 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 ​	对**远处**的物体，采用**低分辨率**的纹理，对于**近处**的物体，采用**高分辨率**的纹理。
 
-#### 3) mipmap的构建
+### 3) mipmap的构建
 
 ​	预先创建原纹理大小2分之一的多级渐远纹理。在次级纹理其构建时，会使用线性过滤，使次级纹理得到平滑的过度效果。
 
@@ -766,7 +764,7 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 <img src=".\pic\cg_mipmap.png" alt="cg_mipmap" style="zoom:100%;" />
 
-#### 4) mipmap优缺点
+### 4) mipmap优缺点
 
 **优点**
 
@@ -778,13 +776,13 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 ​	占用显存。
 
-## 抗锯齿技术
+# 抗锯齿技术
 
-## ShadowMap
+# ShadowMap
 
-### 1 DepthMap
+## 1 DepthMap
 
-#### 1) DepthMap格式、精度和分辨率
+### 1) DepthMap格式、精度和分辨率
 
 - OpenGL中DepthMap格式可以为`GL_DEPTH_COMPONENT24`、`GL_DEPTH_COMPONENT32`等等，数值格式为`float`；增加深度通道的位数可以提高精度，解决深度冲突；
 
@@ -794,7 +792,7 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 - 接近 near 平面，z值越密；距离越远，z值越稀，这样距离照相机越近精度越高。
 
-#### 2) 深度的非线性
+### 2) 深度的非线性
 
 <img src="./pic/cg_depth_non_linear.png" alt="cg_depth_non_linear" style="zoom:65%;" />
 
@@ -802,7 +800,7 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 ​	d：z经过透视变换、透视除法后在ndc空间的深度值。
 
-##### 2.1) z -> d为何非线性
+#### 2.1) z -> d为何非线性
 
 - 实用性：计算机存储精度有限，离摄像机越远的物体，信息越少，对画面的贡献也越少，没必要为其提供高精度。所以深度值在靠近近平面精度越高，越远精度越低，是合理的设定。
 
@@ -812,7 +810,7 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
   上图中三维空间点$(x_{1},z_{1})$和$(x_{2},z_{2})$投影到z为-e的平面上得到两点$(p_{1},-e)$和$(p_{2},-e)$。在投影点间取几个等距点还原，可以看到还原的三维点并不等距。
 
-##### 2.2) 线性化深度
+#### 2.2) 线性化深度
 
 $z_{linear}=\frac{z-n}{f-n}$
 
@@ -820,7 +818,7 @@ $z=\frac{2nf}{f+n-(2d-1)*(f-n)}$
 
 ​	d：深度图中取出的数据；n、f：近平面和远平面的距离；
 
-#### 3) 深度值和顶点属性插值
+### 3) 深度值和顶点属性插值
 
 ​	在使用光栅化的图形学方法中，法线，颜色，纹理坐标这些属性通常是绑定在图元的顶点上。
 
@@ -842,7 +840,7 @@ $\frac{1}{Z_{s}} = \frac{1}{Z_{1}}(1-s) + \frac{1}{Z_{2}}s$
 
 ​	有了透视正确的顶点位置后，由于顶点属性和位置在3维空间中是线性相关的，因此也可利用上式求出顶点属性的正确插值。
 
-#### 4) 深度冲突
+### 4) 深度冲突
 
 ​	DepthBuffer是非线性的，因此在远离摄像机的地方，由于精度不足，可能造成深度冲突。
 
@@ -853,7 +851,7 @@ $\frac{1}{Z_{s}} = \frac{1}{Z_{1}}(1-s) + \frac{1}{Z_{2}}s$
 - 略微在场景中移动物体坐标，错开那些靠的很近的物体(实用，基本能解决问题)；
 - Offset语法【**待理解**】
 
-#### 5) 平行光的视图矩阵、投影矩阵
+### 5) 平行光的视图矩阵、投影矩阵
 
 ```c++
 distLightCam.setPosition(lightEnv.DirectionalLight.Position);
@@ -862,9 +860,9 @@ distLightCam.setOrtho(-10.f, 10.f, -10.f, 10.f);
 distLightCam.setNearFar(camera.near(), camera.far());
 ```
 
-### 2 点光源CubeMap
+## 2 点光源CubeMap
 
-#### 1) 写入深度图
+### 1) 写入深度图
 
 - 顶点着色器：将mesh转换到世界空间中，作为几何着色器的输入；
 
@@ -874,7 +872,7 @@ distLightCam.setNearFar(camera.near(), camera.far());
 
 - 片元着色器：光栅化上述不同光照空间的图元后，片元着色器中根据几何着色器传入的world position和常量光源位置，计算距离，写入不同面的深度缓冲。
 
-#### 2) CubeMap采样
+### 2) CubeMap采样
 
 ```glsl
 vec3 sampleVec = fragPos - lightPos; 
@@ -885,9 +883,9 @@ float closestDepth = texture(depthMap, sampleVec).r;
 
 ​	深度缓冲是以光源为中心写入的，因此可以采样到包围光源所有方向的深度值。
 
-## 骨骼动画
+# 骨骼动画
 
-### 1 基础概念
+## 1 基础概念
 
 - Bind Pose(绑定姿态)：美术在建模软件中定义的骨骼**默认姿态**，绑定空间可以理解为**模型本地空间**。
 
@@ -899,15 +897,15 @@ float closestDepth = texture(depthMap, sampleVec).r;
 
 - Mesh Transform(蒙皮变换矩阵)：Mesh Transform = Global Transform x OffsetMatrix。顶点应用了蒙皮矩阵后，就确定了其在绑定空间下的最终位置。
 
-## 渲染性能
+# 渲染性能
 
-### 1 顶点属性太多，槽位不够
+## 1 顶点属性太多，槽位不够
 
-### 2 模型面数太多如何优化
+## 2 模型面数太多如何优化
 
-### 3 vs、fs开销大，如何优化
+## 3 vs、fs开销大，如何优化
 
-### 4 PBR 材质贴图多，纹理槽位不够应该怎么处理
+## 4 PBR 材质贴图多，纹理槽位不够应该怎么处理
 
 - 合并多个属性到一个通道，比如roughness和metallic可以存在 8 bit 纹理的高低4 bit上。
 - 虚拟纹理，将小贴图合并成大贴图，按需调入。

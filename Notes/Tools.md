@@ -22,7 +22,13 @@ cl /d1 reportSingleClassLayoutClassName "absolutepath/XXX.cpp"
 
 ## 共享文件的两种实现方式
 
-​	参考[这里](https://zhuanlan.zhihu.com/p/42203768)。
+​	参考[这里](https://zhuanlan.zhihu.com/p/42203768)。samba可参考[这里](https://blog.csdn.net/qq_44078824/article/details/119847027)。
+
+# Linux指令
+
+切换到根目录：cd /
+
+打印当前路径：pwd
 
 
 

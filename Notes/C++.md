@@ -1649,7 +1649,13 @@ k = &j; //Error
 
 ​	将要删除的对象和尾部对象swap，然后直接pop_back即可。
 
-### 4) vector如何减容
+### 4) vector减容
+
+​	vector不会自动减容，pop_back后vector也不会减容，只是size变化，但capacity不会变。
+
+​	回收不必要的内存，可调用函数shrink_to_fit()，使capacity和size一致。
+
+​	可以使用swap()，用空的vector对内存清空。
 
 
 

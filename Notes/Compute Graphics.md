@@ -33,6 +33,63 @@
 
 ​	旋转和缩放对于向量和点都有意义，可用类似上面齐次表示来检测。因此，齐次坐标使仿射变换更方便。
 
+## 3 平面
+
+​	平面方程为：$Ax + By + Cz + D = 0$，可由一个**四维向量**来表示。
+
+### 1) 法线和平面点确定平面
+
+​	平面方程中，$(A,B,C)$是平面的方向向量。
+
+​	现有平面上任意点O$(x_{o},y_{o},z_{o})$，代入平面方程有：$D = -(Ax_{o} + By_{o} + Cz{o})$
+
+​	因此，D的值是平面法向量和平面内任意点点乘的负数。
+
+​	所以有如下函数：
+
+```c++
+glm::vec4 GetPlane(const glm::vec3 &normal, const glm::vec3 &point)
+{
+    return glm::vec4(normal, -(glm::dot(normal, point)));
+}
+```
+
+### 2) 三个点确定平面
+
+​	输入参数$p_{0}、p_{1}、p_{2}$按逆时针排序，否则法线方向不一致。
+
+```c++
+glm::vec4 GetPlane(const glm::vec3 &p0, const glm::vec3 &p1, const glm::vec3 &p2)
+{    
+    glm::vec3 edge0 = glm::normalize(p1 - p0);
+    glm::vec3 edge1 = glm::normalize(p2 - p0);
+    glm::vec3 normal = glm::cross(edge0, edge1);
+    return GetPlane(normal, p0);
+}
+```
+
+### 3) 判断点和面的位置关系
+
+​	点和平面存在三个位置关系：① 点在面的上方(法线同侧)；② 点在平面内；③ 点在面的下方(法线异侧)。
+
+​	设平面方程$Ax + By + Cz + D = 0$，且平面上一点O$(x_{o},y_{o},z_{o})$，则有$D = -(Ax_{o} + By_{o} + Cz{o})$。
+
+​	设有点A$(x_{a},y_{a},z_{a})$，需要判断A和平面的位置关系，将A代入平面方程有：
+
+$Ax_{a}+By_{a}+Cz_{a}-(Ax_{o} + By_{o} + Cz{o})$
+
+​	提取出法向量，有：
+
+$A(x_{a}-A_{o})+B(y_{a}-y_{o})+C(z_{a}-z_{o}) = N \cdot \vec{OA}$，O是平面上的点，A是待求点。
+
+$N \cdot \vec{OA}=|N||\vec{OA}|cos\theta$
+
+​	因此，有如下结论：
+
+- 若A在平面上方(即OA和法线夹角小于90)，$ax+by+cz+d > 0$。
+- 若A在平面上(即OA和法线夹角等于90)，$ax+by+cz+d = 0$。
+- 若A在平面下方(即OA和法线夹角大于90)，$ax+by+cz+d < 0$。
+
 # 渲染管线
 
 ​	图形渲染管线：原始图形数据途经输送管道，经过各种变化处理最终出现在屏幕的过程。
@@ -704,6 +761,12 @@ bool isConvexPolygon(QVector<Point> Polygon)
 }
 ```
 
+## 6 空间划分
+
+### 1) BVH
+
+### 2) 八叉树
+
 # 纹理
 
 ## 1 纹理环绕
@@ -775,6 +838,8 @@ bool isConvexPolygon(QVector<Point> Polygon)
 **缺点**
 
 ​	占用显存。
+
+## 4 虚拟纹理
 
 # 抗锯齿技术
 
@@ -899,9 +964,65 @@ float closestDepth = texture(depthMap, sampleVec).r;
 
 # 渲染性能
 
-## 1 顶点属性太多，槽位不够
+## 1 常规性能问题思路
 
-## 2 模型面数太多如何优化
+<img src=".\pic\cg_performance.png" alt="cg_performance" style="zoom:90%;" />
+
+### 1) Draw Call
+
+​	① 把数据加载到显存中：把网格和纹理等数据从硬盘加载到显存中；
+​	② 设置渲染状态；
+​	③ 调用Draw Call：准备好上述工作后，CPU就调用一个渲染命令(Draw Call)来告诉GPU执行渲染。
+
+### 2) 批处理
+
+#### 2.1) 静态批处理
+
+<img src=".\pic\cg_performance_static_patch.png" alt="cg_performance_static_patch" style="zoom:70%;" />
+
+​	静态批处理是将共享共同材质的模型的顶点、索引存放至统一的vertex buffer和index buffer。
+
+​	这些数据**统一上传**，但还是按模型的数量**多次调用Draw call**，分别绘制每个子模型。
+
+​	静态批处理节约了**binding切换**、**绘制状态设置**的消耗，但可能会增大vertex buffer(若使用重复模型，会把相同的顶点拷贝到v-buffer中)。
+
+#### 2.2) 动态批处理
+
+​	对于**正在视野中**的符合条件的动态对象在一个Draw call内绘制，所以**会降低Draw Calls**的数量。
+
+​	其原理是：将所有**共享同一材质**的模型的顶点信息变换到世界空间中，然后通过一次Draw call绘制多个模型，达到合批的目的。模型顶点变换的操作是由CPU完成的，所以这会带来一些CPU的性能消耗。
+
+<img src=".\pic\cg_performance_dynamic_patch.png" alt="cg_performance_dynamic_patch" style="zoom:100%;" />
+
+### 3) Instancing
+
+​	在使用**相同材质、相同Mesh**的情况下，使用**Uniform Buffer**将所有实例渲染所需的属性，如位置、缩放、uv偏移、等信息保存在显存中，然后使用**一次DrawCall**将**一个模型**送入管线，使用GPU Instancing来执行批量绘制。
+
+​	在管线中对每个实例，抽取其对应的属性信息，进行渲染。
+
+​	GPU Instancing可以**规避合并Mesh导致的内存与性能上升**的问题，但场景中所有符合该合批条件的实例的属性信息每帧都必须更新到Uniform Buffer中。
+
+### 4) 剔除技术
+
+​	光栅化管线中，存在几个剔除阶段。
+
+- 几何阶段视锥体剔除
+
+  ​	在几何阶段后期，图元装配后，光栅化执行前，会执行视锥体剔除，这是由管线(硬件)实现的。
+
+  ​	虽然被剔除的面不会执行后续的管线流程，但是它们仍然会参加几何阶段的前部分流程：顶点着色器、曲面细分、几何着色器等，因此，仍然会浪费部分GPU资源。
+
+- early-z
+
+  early-z在光栅化后，片元着色器执行前。同几何阶段视锥体剔除一样，被裁剪的面仍然会浪费前部分的GPU资源；
+
+- 像素处理阶段
+
+  像素处理阶段包含模板测试、深度测试等像素剔除操作，是在整个管线的尾端。故仍然会浪费前部分的GPU资源。
+
+#### 4.1) CPU视锥体剔除
+
+## 2 帧同步和状态同步
 
 ## 3 vs、fs开销大，如何优化
 

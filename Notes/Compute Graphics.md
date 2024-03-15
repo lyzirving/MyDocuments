@@ -43,7 +43,7 @@
 
 ​	现有平面上任意点O$(x_{o},y_{o},z_{o})$，代入平面方程有：$D = -(Ax_{o} + By_{o} + Cz{o})$
 
-​	因此，D的值是平面法向量和平面内任意点点乘的负数。
+​	因此，D的值是平面法向量和平面内任意点点积的负数。
 
 ​	所以有如下函数：
 
@@ -53,6 +53,16 @@ glm::vec4 GetPlane(const glm::vec3 &normal, const glm::vec3 &point)
     return glm::vec4(normal, -(glm::dot(normal, point)));
 }
 ```
+
+​	平面内任意点和法向量点积的几何意义如下：
+
+<img src=".\pic\cg_plane.png" alt="cg_plane" style="zoom:50%;" />
+
+​	$D = -n \cdot p$，**假设平面法向量是过坐标原点延伸出的轴**，那么D为平面在该轴上的距离(这个距离是有方向的)。
+
+​	当**D是正数**，那么平面从原点起，沿着n的反方向移动了**|D|**的长度；
+
+​	当**D是负数**，那么平面从原点起，沿着n向其正方向移动了**|D|**的长度。
 
 ### 2) 三个点确定平面
 
@@ -89,6 +99,150 @@ $N \cdot \vec{OA}=|N||\vec{OA}|cos\theta$
 - 若A在平面上方(即OA和法线夹角小于90)，$ax+by+cz+d > 0$。
 - 若A在平面上(即OA和法线夹角等于90)，$ax+by+cz+d = 0$。
 - 若A在平面下方(即OA和法线夹角大于90)，$ax+by+cz+d < 0$。
+
+# 图形基本算法
+
+## 1 点和射线的距离
+
+​	本小节参考自[这里](https://blog.csdn.net/LIQIANGEASTSUN/article/details/119598965)。
+
+​	点和射线有如下四种位置关系：
+
+<img src=".\pic\cg_ray_point.png" alt="cg_ray_point" style="zoom:75%;" align="left" /><img src=".\pic\cg_ray_point_1.png" alt="cg_ray_point" style="zoom:75%;" />
+
+
+
+<img src=".\pic\cg_ray_point_2.png" alt="cg_ray_point" style="zoom:75%;" align="left" /><img src=".\pic\cg_ray_point_3.png" alt="cg_ray_point" style="zoom:75%;" />
+
+### 1) 点到射线的垂足坐标
+
+$\vec{PO}=0 - P$;
+
+$dot = \vec{PO}\cdot\vec{Ray}$
+
+$D = P + dot*\vec{Ray}$
+
+### 2) 点到射线的距离
+
+​	两点先验知识：
+
+​	① 向量叉积模长公式：$|\vec{a}\otimes\vec{b}|=|\vec{a}||\vec{b}|sin\theta$。
+
+​	② 平行四边形面积公式：$S=ab*sin\theta = 底 \times 高 = a \times h$，其中a、b是平行四边形的相邻边长度，h为a上的高，都为标量。
+
+​	所以，$S_{平行四边形} = 相邻边叉积的模$。
+
+​	如下图，有射线$\vec{PD}$和点$O$，求$O$到射线的距离：
+
+<img src=".\pic\cg_point_ray_distance.png" alt="cg_point_ray_distance" style="zoom:75%;" />
+
+​	取$\vec{PO}$和单位向量$\vec{PP'}$作平行四边形，那么底边$PP'$的高$OD=|PO|\times sin\theta$。
+
+## 2 射线和三角形求交
+
+### 1) 解析法
+
+​	假设射线和三角形所在平面的交点为p，在平面上任取一点a，有$(p-a)\cdot\vec{n}=0$，可计算求得点p。
+
+​	然后通过叉积法判断点p是否在三角形内部：
+
+<img src=".\pic\cg_algorithmn.png" alt="cg_algorithmn" style="zoom:85%;" />
+
+​	依次求解$\vec{AP} \otimes \vec{AB}$、$\vec{BP} \otimes \vec{BC}$、$\vec{CP} \otimes \vec{CA}$，若结果向量的方向一致，则在三角形内部。
+
+### 2) moller-Trumbore射线三角相交算法
+
+​	一种快速计算射线与三角形在三个维度上的交点的方法，通过向量与矩阵计算可以快速得出交点与重心坐标，而无需对包含三角形的平面方程进行预计算。算法推导[这里](https://blog.csdn.net/zhanxi1992/article/details/109903792)。
+
+## 3 射线和球求交
+
+### 1) 解析法
+
+​	将射线代入球的解析表达式，解方程，求解出交点坐标。
+
+### 2) 几何法
+
+​	已知射线起点o和方向p，球的圆心为c，球的半径为r。
+
+​	从c作到射线的垂线，求出距离h。若$h<=r$，则射线与球有交点。
+
+## 4 判断任意点在凸多边形内部/外部
+
+​	射线法、转角法参考[此处](https://blog.csdn.net/WilliamSun0122/article/details/77994526)。
+
+### 1) 射线法
+
+​	以被测点Q为端点，向任意方向作射线(一般水平向右作射线)。统计该射线与多边形的交点数。如果为奇数，Q在多边形内；如果为偶数，Q在多边形外。
+
+​	如下图有些特殊情况：
+
+<img src=".\pic\cg_ray_intersect.png" alt="cg_ray_intersect" style="zoom:80%;" />
+
+​	情况a)，射线和两条边的共同顶点相交，此时交点只能算一个；
+
+​	情况b)，射线和两条线的最低处共同顶点相交，该点不能算；
+
+​	情况c)，射线和多边形的一边平行，该边应忽略不计。
+
+### 2) 转角法
+
+<img src=".\pic\cg_intersect_turning_angle.png" alt="cg_intersect_turning_angle" style="zoom:30%;" />
+
+<img src=".\pic\cg_intersect_turning_angle_1.png" alt="cg_intersect_turning_angle_1" style="zoom:75%;" />
+
+​	多边形内部的点连接各个顶点，其所形成的角度和在精度范围内应等于360度，如果小于360度或者大于360度，则证明该点不在多边形中。
+
+​	转角法简单，但是由于涉及要使用反三角函数，会耗时，且造成较大的精度误差。
+
+### 3) 转角法优化
+
+​	从P点向右做射线R，如果边从射线R下方跨到上方，那么穿越+1，如果从上方跨到下方，则是-1。最终和为wn环绕数。
+
+<img src=".\pic\cg_intersect_turning_angle_optimize.png" alt="cg_intersect_turning_angle_optimize" style="zoom:85%;" />
+
+​	这种方法不必去计算射线和边的交点，但需要判断点P和边的左右关系，而且对于方向向上和向下的边的判断规则不同。
+
+​	对于方向向上的边，如果穿过射线，那么P是在有向边的左侧；对于方向向下的边，如果穿过射线，那么P在有向边的右侧。
+
+<img src=".\pic\cg_intersect_turning_angle_optimize_1.png" alt="cg_intersect_turning_angle_optimize_1" style="zoom:75%;" />
+
+## 5 判断多边形的凹凸性
+
+​	依次顺时针遍历多边形的顶点。若向量的叉积保持一致，则是凸多边形，反之是凹多边形。
+
+​	求$\vec{p_{0}p_{1}}\times\vec{p_{0}p_{2}}$：
+
+```c++
+double cross(Point& p1, Point& p2, Point& p0)
+{
+    return (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
+}
+```
+
+​	判断是否为凸多边形。若Polygon是顺时针排序，叉乘结果应该小于0；若Polygon是逆指针排序，叉乘结果应该大于0：
+
+```c++
+bool isConvexPolygon(QVector<Point> Polygon)
+{
+    int len = Polygon.size();
+    int s = 0, e = len;
+    if(e == 2)
+        return true;
+    while (s <= e-3) {
+        if (cross(Polygon[s+1], Polygon[s+2],Polygon[s]) < 0)
+            s++;
+        else 
+            return false;
+    }
+    return true;
+}
+```
+
+## 6 空间划分
+
+### 1) BVH
+
+### 2) 八叉树
 
 # 渲染管线
 
@@ -622,150 +776,6 @@ for(int i = 0; i < steps; i++)
 ​	$G(l, v, h)$：几何函数，描述微平面自成阴影的属性，即当m = h时，未被遮蔽的表面点的百分比。
 
 ​	分母$4(l\cdot n)(v \cdot n)$：校正因子（correctionfactor），作为微观几何的局部空间和整个宏观表面的局部空间之间变换的微平面量的校正。
-
-# 算法应用
-
-## 1 点和射线的距离
-
-​	本小节参考自[这里](https://blog.csdn.net/LIQIANGEASTSUN/article/details/119598965)。
-
-​	点和射线有如下四种位置关系：
-
-<img src=".\pic\cg_ray_point.png" alt="cg_ray_point" style="zoom:75%;" align="left" /><img src=".\pic\cg_ray_point_1.png" alt="cg_ray_point" style="zoom:75%;" />
-
-
-
-<img src=".\pic\cg_ray_point_2.png" alt="cg_ray_point" style="zoom:75%;" align="left" /><img src=".\pic\cg_ray_point_3.png" alt="cg_ray_point" style="zoom:75%;" />
-
-### 1) 点到射线的垂足坐标
-
-$\vec{PO}=0 - P$;
-
-$dot = \vec{PO}\cdot\vec{Ray}$
-
-$D = P + dot*\vec{Ray}$
-
-### 2) 点到射线的距离
-
-​	两点先验知识：
-
-​	① 向量叉积模长公式：$|\vec{a}\otimes\vec{b}|=|\vec{a}||\vec{b}|sin\theta$。
-
-​	② 平行四边形面积公式：$S=ab*sin\theta = 底 \times 高 = a \times h$，其中a、b是平行四边形的相邻边长度，h为a上的高，都为标量。
-
-​	所以，$S_{平行四边形} = 相邻边叉积的模$。
-
-​	如下图，有射线$\vec{PD}$和点$O$，求$O$到射线的距离：
-
-<img src=".\pic\cg_point_ray_distance.png" alt="cg_point_ray_distance" style="zoom:75%;" />
-
-​	取$\vec{PO}$和单位向量$\vec{PP'}$作平行四边形，那么底边$PP'$的高$OD=|PO|\times sin\theta$。
-
-## 2 射线和三角形求交
-
-### 1) 解析法
-
-​	假设射线和三角形所在平面的交点为p，在平面上任取一点a，有$(p-a)\cdot\vec{n}=0$，可计算求得点p。
-
-​	然后通过叉积法判断点p是否在三角形内部：
-
-<img src=".\pic\cg_algorithmn.png" alt="cg_algorithmn" style="zoom:85%;" />
-
-​	依次求解$\vec{AP} \otimes \vec{AB}$、$\vec{BP} \otimes \vec{BC}$、$\vec{CP} \otimes \vec{CA}$，若结果向量的方向一致，则在三角形内部。
-
-### 2) moller-Trumbore射线三角相交算法
-
-​	一种快速计算射线与三角形在三个维度上的交点的方法，通过向量与矩阵计算可以快速得出交点与重心坐标，而无需对包含三角形的平面方程进行预计算。算法推导[这里](https://blog.csdn.net/zhanxi1992/article/details/109903792)。
-
-## 3 射线和球求交
-
-### 1) 解析法
-
-​	将射线代入球的解析表达式，解方程，求解出交点坐标。
-
-### 2) 几何法
-
-​	已知射线起点o和方向p，球的圆心为c，球的半径为r。
-
-​	从c作到射线的垂线，求出距离h。若$h<=r$，则射线与球有交点。
-
-## 4 判断任意点在凸多边形内部/外部
-
-​	射线法、转角法参考[此处](https://blog.csdn.net/WilliamSun0122/article/details/77994526)。
-
-### 1) 射线法
-
-​	以被测点Q为端点，向任意方向作射线(一般水平向右作射线)。统计该射线与多边形的交点数。如果为奇数，Q在多边形内；如果为偶数，Q在多边形外。
-
-​	如下图有些特殊情况：
-
-<img src=".\pic\cg_ray_intersect.png" alt="cg_ray_intersect" style="zoom:80%;" />
-
-​	情况a)，射线和两条边的共同顶点相交，此时交点只能算一个；
-
-​	情况b)，射线和两条线的最低处共同顶点相交，该点不能算；
-
-​	情况c)，射线和多边形的一边平行，该边应忽略不计。
-
-### 2) 转角法
-
-<img src=".\pic\cg_intersect_turning_angle.png" alt="cg_intersect_turning_angle" style="zoom:30%;" />
-
-<img src=".\pic\cg_intersect_turning_angle_1.png" alt="cg_intersect_turning_angle_1" style="zoom:75%;" />
-
-​	多边形内部的点连接各个顶点，其所形成的角度和在精度范围内应等于360度，如果小于360度或者大于360度，则证明该点不在多边形中。
-
-​	转角法简单，但是由于涉及要使用反三角函数，会耗时，且造成较大的精度误差。
-
-### 3) 转角法优化
-
-​	从P点向右做射线R，如果边从射线R下方跨到上方，那么穿越+1，如果从上方跨到下方，则是-1。最终和为wn环绕数。
-
-<img src=".\pic\cg_intersect_turning_angle_optimize.png" alt="cg_intersect_turning_angle_optimize" style="zoom:85%;" />
-
-​	这种方法不必去计算射线和边的交点，但需要判断点P和边的左右关系，而且对于方向向上和向下的边的判断规则不同。
-
-​	对于方向向上的边，如果穿过射线，那么P是在有向边的左侧；对于方向向下的边，如果穿过射线，那么P在有向边的右侧。
-
-<img src=".\pic\cg_intersect_turning_angle_optimize_1.png" alt="cg_intersect_turning_angle_optimize_1" style="zoom:75%;" />
-
-## 5 判断多边形的凹凸性
-
-​	依次顺时针遍历多边形的顶点。若向量的叉积保持一致，则是凸多边形，反之是凹多边形。
-
-​	求$\vec{p_{0}p_{1}}\times\vec{p_{0}p_{2}}$：
-
-```c++
-double cross(Point& p1, Point& p2, Point& p0)
-{
-    return (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
-}
-```
-
-​	判断是否为凸多边形。若Polygon是顺时针排序，叉乘结果应该小于0；若Polygon是逆指针排序，叉乘结果应该大于0：
-
-```c++
-bool isConvexPolygon(QVector<Point> Polygon)
-{
-    int len = Polygon.size();
-    int s = 0, e = len;
-    if(e == 2)
-        return true;
-    while (s <= e-3) {
-        if (cross(Polygon[s+1], Polygon[s+2],Polygon[s]) < 0)
-            s++;
-        else 
-            return false;
-    }
-    return true;
-}
-```
-
-## 6 空间划分
-
-### 1) BVH
-
-### 2) 八叉树
 
 # 纹理
 

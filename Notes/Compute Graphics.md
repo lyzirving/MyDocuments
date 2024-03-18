@@ -368,9 +368,50 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 <img src="./pic/cg_matrix_flow.png" alt="cg_matrix_flow" style="zoom:100%;" />
 
-## 4 相机变换
+## 4 坐标转换矩阵
 
-## 5 透视变换
+​	正交矩阵的所有列(行)向量构成了一个标准正交基(**Orthonormal Bases**)，它的列向量(**列主序**)是两两垂直的**单位向量**。
+
+​	标准正交基可以视为对坐标系的描述：在标准参考系下，**同一向量** $\vec{v}$，在不同坐标基下，有不同的坐标。
+
+​	比如，在标准参考系下，有向量 $\vec{v}$ 。该向量在正交基 $R$ 下，该向量为 $\vec{v_{R}}$，在正交基 $Q$ 下，该向量为 $\vec{v_{Q}}$。
+
+​	所有有：$\vec{v} = R\vec{v_{R}} = Q\vec{v_{Q}}$ 。
+
+## 5 相机变换
+
+### 1) 关键因素
+
+​	① 相机位置；② 相机视线；③ 相机的上方向(自定义)。
+
+### 2) 相机三轴方向推导
+
+<img src=".\pic\cg_camera_axis.png" alt="cg_camera_axis" style="zoom:50%;" />
+
+​	**from**指定相机在世界空间的位置；**to**指定相机视线终点在世界空间的位置；
+
+​	**up**指定相机的上方。将from，up，to执行一定的数学计算，就可确定相机空间的三轴的方向。
+
+​	**forward向量**(相机+z/+f轴)：
+
+```c++
+vec3 forward = normalize(from - to);
+```
+
+​	**right向量**(相机+x/+r轴)：不管forward如何变化，**forward必然和世界空间的up(0, 1, 0)在同一个平面中**，因此可以通过下式求出相机的right：
+
+```c++
+vec3 worldUp{0, 1, 0};
+vec3 right = normalize(cross(worldUp, forward));
+```
+
+​	**up向量**(相机+y/+u轴)：right、up和forward满足右手法则，因此通过矩阵叉乘，就能求得up向量，注意叉乘的顺序：
+
+```c++
+vec3 up = normalize(cross(forward, right));
+```
+
+## 6 透视投影
 
 ​	世界空间的点经过相机矩阵后，被转换到相机空间。此时，多边形可能会被视椎体裁剪，但在不规则体中裁剪很难，所以裁剪被安排到规则观察体(`Canonical View Volume, CVV`)中(`齐次裁剪空间`)。
 
@@ -465,7 +506,9 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, -\frac{az+b}{z})\qquad\qquad\qquad\qquad\qqua
 
 ​	投影失真的解决方法就是之后的`视口变换`：把归一化的顶点按照和`投影面上相同的比例`变换到视口中，从而解除透视投影变换带来的失真现象。
 
-## 6 3d拾取
+## 7 正交投影
+
+## 8 3d拾取
 
 ### 1) 屏幕上的点转换到视口坐标
 
@@ -855,9 +898,9 @@ for(int i = 0; i < steps; i++)
 
 # ShadowMap
 
-## 1 DepthMap
+## 1 基本概念
 
-### 1) DepthMap格式、精度和分辨率
+### 1) 深度贴图的格式、精度和分辨率
 
 - OpenGL中DepthMap格式可以为`GL_DEPTH_COMPONENT24`、`GL_DEPTH_COMPONENT32`等等，数值格式为`float`；增加深度通道的位数可以提高精度，解决深度冲突；
 
@@ -926,16 +969,93 @@ $\frac{1}{Z_{s}} = \frac{1}{Z_{1}}(1-s) + \frac{1}{Z_{2}}s$
 - 略微在场景中移动物体坐标，错开那些靠的很近的物体(实用，基本能解决问题)；
 - Offset语法【**待理解**】
 
-### 5) 平行光的视图矩阵、投影矩阵
+## 2 ShadowMap的缺陷
+
+### 1) 阴影失真(Shadow Acne)
+
+#### 1.1) 阴影失真原因
+
+​	原因：阴影贴图的分辨率过小，导致多个点顶点采样到同一个阴影贴图纹理。
+
+<img src=".\pic\cg_shadow_acne.png" alt="cg_shadow_acne" style="zoom:85%;" />
+
+​	如图所示，a、b、c、d四个点都采样同一个阴影纹理，其深度为10。
+
+​	a、d距离光源的距离为9.8，b、c与光源的距离是10.2。
+
+​	理论上a、b、c、d四个点都应该被点亮，但是由于上述的采样关系，a、d被点亮，b、c被认为在阴影中，从而产生了阴影失真。
+
+#### 1.2) Shadow Bias
+
+​	在判定阴影的时候，添加一个偏移，在消除阴影失真。
 
 ```c++
-distLightCam.setPosition(lightEnv.DirectionalLight.Position);
-distLightCam.setLookAt(lightEnv.DirectionalLight.Dest);	
-distLightCam.setOrtho(-10.f, 10.f, -10.f, 10.f);
-distLightCam.setNearFar(camera.near(), camera.far());
+float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);  
+float shadow = currentDepth - bias > closestDepth  ? 1.0 : 0.0; 
 ```
 
-## 2 点光源CubeMap
+#### 1.3) Shadow Bias产生Peter Panning
+
+​	在深度贴图渲染阶段，使用正面剔除来消除Peter Panning：
+
+<img src=".\pic\gl_front_face_culling.png" alt="gl_front_face_culling" style="zoom:75%;" />
+
+​	伪代码如下：
+
+```c++
+glCullFace(GL_FRONT);
+RenderSceneToDepthMap();
+glCullFace(GL_BACK); // don't forget to reset original culling face
+```
+
+### 2) 阴影边缘过硬：pcf柔化
+
+​	pcf（percentage-closer filtering）通过采样周围的纹素，柔滑过硬的边缘。
+
+​	伪代码如下：
+
+```c++
+float shadow = 0.0;
+vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+for(int x = -1; x <= 1; ++x)
+{
+    for(int y = -1; y <= 1; ++y)
+    {
+        float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r; 
+        shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;        
+    }    
+}
+shadow /= 9.0;
+```
+
+## 3 级联阴影映射(Cascaded Shadow Map)
+
+​	本小节主要参考[这里](https://zhuanlan.zhihu.com/p/388459633?utm_id=0)，Nvidia的论文看[这里](https://developer.download.nvidia.cn/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf)。
+
+- ShadowMap的缺点
+
+​	大场景中，阴影**边缘**的**锯齿严重**。
+
+​	深度是非线性的(与$\frac{1}{z}$呈线性相关)，由于阴影贴图的分辨率有限，远处物体对阴影贴图采样时，**多个不同的顶点对同一个像素采样**，导致生成锯齿。
+
+- CSM解决锯齿问题
+
+​	为了解决锯齿问题，我们使用多张阴影贴图。
+
+​	离相机近的地方使用精细的阴影贴图，离相机远的地方使用粗糙的阴影贴图，这样不仅优化了阴影效果，还保证了渲染效率。
+
+### 1) CSM流程
+
+- 摄像机视锥体分割；
+- 子视锥体包围盒计算；
+- 光源投影矩阵计算；
+- ShadowMap贴图渲染。
+
+### 2) 视锥体分割
+
+<img src=".\pic\cg_partition_frustum.png" alt="cg_partition_frustum" style="zoom:60%;" />
+
+## 4 点光源CubeMap
 
 ### 1) 写入深度图
 

@@ -104,7 +104,7 @@ $N \cdot \vec{OA}=|N||\vec{OA}|cos\theta$
 
 ## 1 点和射线的距离
 
-​	本小节参考自[这里](https://blog.csdn.net/LIQIANGEASTSUN/article/details/119598965)。
+​	本小节参考自[https://blog.csdn.net/LIQIANGEASTSUN/article/details/119598965](https://blog.csdn.net/LIQIANGEASTSUN/article/details/119598965)。
 
 ​	点和射线有如下四种位置关系：
 
@@ -152,7 +152,7 @@ $D = P + dot*\vec{Ray}$
 
 ### 2) moller-Trumbore射线三角相交算法
 
-​	一种快速计算射线与三角形在三个维度上的交点的方法，通过向量与矩阵计算可以快速得出交点与重心坐标，而无需对包含三角形的平面方程进行预计算。算法推导[这里](https://blog.csdn.net/zhanxi1992/article/details/109903792)。
+​	一种快速计算射线与三角形在三个维度上的交点的方法，通过向量与矩阵计算可以快速得出交点与重心坐标，而无需对包含三角形的平面方程进行预计算。算法推导[https://blog.csdn.net/zhanxi1992/article/details/109903792](https://blog.csdn.net/zhanxi1992/article/details/109903792)。
 
 ## 3 射线和球求交
 
@@ -168,7 +168,7 @@ $D = P + dot*\vec{Ray}$
 
 ## 4 判断任意点在凸多边形内部/外部
 
-​	射线法、转角法参考[此处](https://blog.csdn.net/WilliamSun0122/article/details/77994526)。
+​	射线法、转角法参考[https://blog.csdn.net/WilliamSun0122/article/details/77994526](https://blog.csdn.net/WilliamSun0122/article/details/77994526)。
 
 ### 1) 射线法
 
@@ -296,7 +296,7 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 <img src="./pic/cg_painter_algothimn.png" alt="cg_painter_algothimn" style="zoom:75%;" />
 
-## 2 对late-Z的优化
+## 2 late-Z的优化
 
 ​	像素处理阶段，片元被着色后(fragmet shader)，通过深度测试，才转换为像素，显示在屏幕上。
 
@@ -368,15 +368,35 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 <img src="./pic/cg_matrix_flow.png" alt="cg_matrix_flow" style="zoom:100%;" />
 
-## 4 坐标转换矩阵
+## 4 坐标变换矩阵
 
-​	正交矩阵的所有列(行)向量构成了一个标准正交基(**Orthonormal Bases**)，它的列向量(**列主序**)是两两垂直的**单位向量**。
+<span id="coordinate_transform"></span>
 
-​	标准正交基可以视为对坐标系的描述：在标准参考系下，**同一向量** $\vec{v}$，在不同坐标基下，有不同的坐标。
+### 1) 标准正交基
 
-​	比如，在标准参考系下，有向量 $\vec{v}$ 。该向量在正交基 $R$ 下，该向量为 $\vec{v_{R}}$，在正交基 $Q$ 下，该向量为 $\vec{v_{Q}}$。
+​	正交矩阵的所有列(行)向量构成了一个标准正交基(**Orthonormal Bases**)，在**列主序**的情况下，它的列向量是两两垂直的**单位向量**。
 
-​	所有有：$\vec{v} = R\vec{v_{R}} = Q\vec{v_{Q}}$ 。
+​	标准正交基可以视为对坐标系的描述：在向量$\vec{v}$，在不同坐标基下，有不同的坐标。
+
+​	比如，在标准参考系下，有向量 $\vec{v}$ 。该向量在正交基 $R$ 下，表示为 $\vec{v_{r}}$；在正交基 $Q$ 下，表示为 $\vec{v_{q}}$。其中：$I\vec{v} = R\vec{v_{r}} = Q\vec{v_{q}}$ 。
+
+### 2) 示例
+
+$\begin{pmatrix}1 \\ 2 \\ 6 \end{pmatrix} = \begin{pmatrix}1 & 0 & 0\\ 0 & 1 & 0 \\ 0 & 0 & 1 \end{pmatrix} \begin{pmatrix}1 \\ 2 \\ 6 \end{pmatrix} = \begin{pmatrix}0 & 0 & 1\\ 1 & 0 & 0 \\ 0 & 1 & 0 \end{pmatrix} \begin{pmatrix}2 \\ 6 \\ 1 \end{pmatrix}$
+
+​	上例中，$\begin{pmatrix}1 & 0 & 0\\ 0 & 1 & 0 \\ 0 & 0 & 1 \end{pmatrix}$是正交基$I$，是通用的标准参考系，三轴分别为$\begin{pmatrix}1 \\ 0 \\ 0 \end{pmatrix}$、$\begin{pmatrix}0 \\ 1 \\ 0 \end{pmatrix}$和$\begin{pmatrix}0 \\ 0 \\ 1 \end{pmatrix}$。
+
+​	$\begin{pmatrix}0 & 0 & 1\\ 1 & 0 & 0 \\ 0 & 1 & 0 \end{pmatrix}$是正交基$R$，三轴分别为$\begin{pmatrix}0 \\ 1 \\ 0 \end{pmatrix}$、$\begin{pmatrix}0 \\ 0 \\ 1 \end{pmatrix}$和$\begin{pmatrix}1 \\ 0 \\ 0 \end{pmatrix}$，$\begin{pmatrix}2 \\ 6 \\ 1 \end{pmatrix}$是$\vec{v}$在正交基$R$下的坐标$\vec{v}_{r}$。
+
+### 3) 坐标变换公式
+
+​	根据小节2)中的示例，有$I\vec{v} = R\vec{v}_{r}$，其中$I$是单位矩阵，有：$\vec{v} = R\vec{v}_{r}$。
+
+​	因此，**把坐标从标准空间转换到对应的参考基中**，有：$\vec{v}_{r} = R^{-1}\vec{v}$，其中$\vec{v}$是向量在标准空间的坐标，$R^{-1}$是标准坐标基$R$的逆矩阵。
+
+​	$R$由三个在**标准参考系中两两垂直的单位列向量**求得，所以$R$是正交矩阵。
+
+​	又因正交矩阵，有$R^{-1} = R^{T}$，$R^{T}$代表**转置**。综上：$\vec{v}_{r} = R^{T}\vec{v}$。
 
 ## 5 相机变换
 
@@ -388,28 +408,46 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 <img src=".\pic\cg_camera_axis.png" alt="cg_camera_axis" style="zoom:50%;" />
 
-​	**from**指定相机在世界空间的位置；**to**指定相机视线终点在世界空间的位置；
+​	**from**指定相机在世界空间的位置；**to**指定相机视线终点在世界空间的位置；**up**指定相机的上方。
 
-​	**up**指定相机的上方。将from，up，to执行一定的数学计算，就可确定相机空间的三轴的方向。
+​	将from，up，to执行一定的数学计算，就可确定相机空间的三轴的方向。
 
-​	**forward向量**(相机+z/+f轴)：
+- **forward向量**(相机+z)
+
+​	forward向量由to指向from，是**视线的反方向**：
 
 ```c++
 vec3 forward = normalize(from - to);
 ```
 
-​	**right向量**(相机+x/+r轴)：不管forward如何变化，**forward必然和世界空间的up(0, 1, 0)在同一个平面中**，因此可以通过下式求出相机的right：
+- **right向量**(相机+x)
+
+​	不管forward如何变化，**forward必然和世界空间的up(0, 1, 0)在同一个平面中**，因此可以通过下式求出相机的right：
 
 ```c++
 vec3 worldUp{0, 1, 0};
 vec3 right = normalize(cross(worldUp, forward));
 ```
 
-​	**up向量**(相机+y/+u轴)：right、up和forward满足右手法则，因此通过矩阵叉乘，就能求得up向量，注意叉乘的顺序：
+- **up向量**(相机+y)	
+
+​	right、up和forward满足右手法则，因此通过矩阵叉乘，就能求得up向量，注意叉乘的顺序：
 
 ```c++
 vec3 up = normalize(cross(forward, right));
 ```
+
+### 3) 相机矩阵
+
+​	通过2）小节，在世界空间中，可以得到相机三轴的表示，因此可以求出三轴下的标准坐标基：$R_{cam}=\begin{pmatrix} \vec{right} & \vec{up} & \vec{forward} \end{pmatrix}$。
+
+​	因此有$\vec{v} = R_{cam} \vec{v}_{cam}$。根据 [坐标变换矩阵](#coordinate_transform) ，有$\vec{v}_{cam} = R_{cam}^{T} \vec{v}$。
+
+​	上述只考虑了相机三轴的旋转，还要考虑相机的位置变化。故要执行**以相机位置为原点的逆向移动**，最终相机矩阵如下：
+
+$R = R_{cam}^{T} \cdot T_{cam}^{-1}$
+
+<img src=".\pic\cg_camera_transform.jpg" alt="cg_camera_transform" style="zoom:100%;" />
 
 ## 6 透视投影
 
@@ -507,6 +545,28 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, -\frac{az+b}{z})\qquad\qquad\qquad\qquad\qqua
 ​	投影失真的解决方法就是之后的`视口变换`：把归一化的顶点按照和`投影面上相同的比例`变换到视口中，从而解除透视投影变换带来的失真现象。
 
 ## 7 正交投影
+
+​	本小节参考自[https://zhuanlan.zhihu.com/p/122411512](https://zhuanlan.zhihu.com/p/122411512)。
+
+​	正交投影矩阵的视锥体是一个长方体\[l, r]、\[b, t]、\[n, f]，在投影变换的过程中，需要把这个长方体转换到一个正方体\[-1, 1]、\[-1, 1]、\[-1, 1]中，如下图所示：
+
+<img src=".\pic\cg_ortho.png" alt="cg_ortho" style="zoom:80%;" align="left" /><img src=".\pic\cg_ortho_1.png" alt="cg_ortho_1" style="zoom:80%;" />
+
+
+
+- 将点移动到以长方体为中心为原点的坐标系中：
+
+​	矩阵$M_{translation} = \begin{pmatrix}1 & 0 & 0 & -(l+r)/2 \\ 0 & 1 & 0 & -(b+t)/2 \\ 0 & 0 & 1 & -(n+f)/2 \\ 0 & 0 & 0 & 1 \end{pmatrix}$。
+
+- 将点缩放到\[-1,1]：
+
+​	矩阵$M_{scale} = \begin{pmatrix} 2/(r-l) & 0 & 0 & 0 \\ 0 & 2/{t-b} & 0 & 0 \\ 0 & 0 & 2/(n-f) & 0 \\ 0 & 0 & 0 & 1 \end{pmatrix}$
+
+- 完整的正交矩阵：
+
+$M_{ortho} = M_{scale}\ast M_{translation}$。
+
+​	综上，正交矩阵实际做了两个工作：① 平移；② 缩放。
 
 ## 8 3d拾取
 
@@ -846,7 +906,7 @@ for(int i = 0; i < steps; i++)
 
 ## 3 mipmap
 
-​	本小节参考自[这里](https://blog.csdn.net/qq_42428486/article/details/118856697)。
+​	本小节参考自[https://blog.csdn.net/qq_42428486/article/details/118856697](https://blog.csdn.net/qq_42428486/article/details/118856697)。
 
 ### 1) 背景
 
@@ -954,7 +1014,7 @@ $z=\frac{2nf}{f+n-(2d-1)*(f-n)}$
 
 $\frac{1}{Z_{s}} = \frac{1}{Z_{1}}(1-s) + \frac{1}{Z_{2}}s$
 
-​	综上，**深度值的倒数是线性相关的**，具体推导参考：[图形学基础之透视校正插值](https://blog.csdn.net/n5/article/details/100148540)。
+​	综上，**深度值的倒数是线性相关的**，具体推导参考：[https://blog.csdn.net/n5/article/details/100148540](https://blog.csdn.net/n5/article/details/100148540)。
 
 ​	有了透视正确的顶点位置后，由于顶点属性和位置在3维空间中是线性相关的，因此也可利用上式求出顶点属性的正确插值。
 
@@ -1030,7 +1090,7 @@ shadow /= 9.0;
 
 ## 3 级联阴影映射(Cascaded Shadow Map)
 
-​	本小节主要参考[这里](https://zhuanlan.zhihu.com/p/388459633?utm_id=0)，Nvidia的论文看[这里](https://developer.download.nvidia.cn/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf)。
+​	本小节主要参考[https://zhuanlan.zhihu.com/p/388459633?utm_id=0](https://zhuanlan.zhihu.com/p/388459633?utm_id=0)，Nvidia的论文看[这里](https://developer.download.nvidia.cn/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf)。
 
 - ShadowMap的缺点
 

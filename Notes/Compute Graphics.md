@@ -166,7 +166,89 @@ $D = P + dot*\vec{Ray}$
 
 ​	从c作到射线的垂线，求出距离h。若$h<=r$，则射线与球有交点。
 
-## 4 判断任意点在凸多边形内部/外部
+## 4 射线和AABB求交
+
+​	下述是Cocos2dx中实现Ray-AABB相交检测的算法：分别与轴对应的面求交点，得到交点后，判断交点是否在范围内。
+
+```c++
+bool Ray::intersects(const AABB& aabb) const
+{
+  Vec3 ptOnPlane; //射线与包围盒某面的交点
+  Vec3 min = aabb._min; //aabb包围盒最小点坐标
+  Vec3 max = aabb._max; //aabb包围盒最大点坐标
+  
+  const Vec3& origin = _origin; //射线起始点
+  const Vec3& dir = _direction; //方向矢量  
+  float t{-1.f};
+    
+  // [NOTE]射线起点在包围盒内部, 若需返回交点，该步骤可省略
+  if(origin >= min && orign <=max) { return true; }
+  
+  //若射线x轴分量为0，射线不经过包围盒与x轴垂直的两个面
+  if (dir.x != 0.f) 
+  {
+    //解射线方程P=O+D*t
+    if (dir.x > 0)//若射线沿x轴正方向偏移
+      t = (min.x - origin.x) / dir.x;
+    else  //射线沿x轴负方向偏移
+      t = (max.x - origin.x) / dir.x;
+    
+    if (t > 0.f)//t>0时则射线与平面相交, 若t<0, 交点在射线起点的身后
+    {
+      ptOnPlane = origin + t * dir; //计算交点坐标
+      //判断交点是否在当前面内
+      if (min.y < ptOnPlane.y && ptOnPlane.y < max.y && min.z < ptOnPlane.z && 
+          ptOnPlane.z < max.z)
+      {
+        return true;
+      }
+    }
+  }
+  
+  //若射线y轴分量为0，射线不经过包围盒与y轴垂直的两个面
+  if (dir.y != 0.f)
+  {
+    if (dir.y > 0)
+      t = (min.y - origin.y) / dir.y;
+    else
+      t = (max.y - origin.y) / dir.y;
+    
+    if (t > 0.f)
+    {
+      ptOnPlane = origin + t * dir;
+      if (min.z < ptOnPlane.z && ptOnPlane.z < max.z && min.x < ptOnPlane.x && 
+          ptOnPlane.x < max.x)
+      {
+        return true;
+      }
+    }
+  }
+  
+  //若射线z轴分量为0，射线不经过包围盒与z轴垂直的两个面
+  if (dir.z != 0.f)
+  {
+    if (dir.z > 0)
+      t = (min.z - origin.z) / dir.z;
+    else
+      t = (max.z - origin.z) / dir.z;
+    
+    if (t > 0.f)
+    {
+      ptOnPlane = origin + t * dir;      
+      if (min.x < ptOnPlane.x && ptOnPlane.x < max.x && min.y < ptOnPlane.y && 
+          ptOnPlane.y < max.y)
+      {
+        return true;
+      }
+    }
+  }  
+  return false;
+}
+```
+
+<img src=".\pic\cg_Ray-AABB_intersection.png" alt="cg_Ray-AABB_intersection" style="zoom:80%;" />
+
+## 5 判断任意点在凸多边形内部/外部
 
 ​	射线法、转角法参考[https://blog.csdn.net/WilliamSun0122/article/details/77994526](https://blog.csdn.net/WilliamSun0122/article/details/77994526)。
 
@@ -206,7 +288,7 @@ $D = P + dot*\vec{Ray}$
 
 <img src=".\pic\cg_intersect_turning_angle_optimize_1.png" alt="cg_intersect_turning_angle_optimize_1" style="zoom:75%;" />
 
-## 5 判断多边形的凹凸性
+## 6 判断多边形的凹凸性
 
 ​	依次顺时针遍历多边形的顶点。若向量的叉积保持一致，则是凸多边形，反之是凹多边形。
 
@@ -238,7 +320,7 @@ bool isConvexPolygon(QVector<Point> Polygon)
 }
 ```
 
-## 6 空间划分
+## 7 空间划分
 
 ### 1) BVH
 

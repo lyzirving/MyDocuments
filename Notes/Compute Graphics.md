@@ -324,7 +324,139 @@ bool isConvexPolygon(QVector<Point> Polygon)
 
 ### 1) BVH
 
-### 2) 八叉树
+​	BVH概述参考自[https://zhuanlan.zhihu.com/p/32300891](https://zhuanlan.zhihu.com/p/32300891)。
+
+#### 1.1) 核心思想
+
+​	层次包围盒（Bounding Volume Hierarchies）是**对空间对象**的划分，其核心思想如下：
+
+​	① 是用体积略大而**几何特征简单**的包围盒来近似地描述复杂的几何对象，从而只需对包围盒重叠的对象进行进一步的相交测试。
+
+​	② 构造**树状层次结构**，可以越来越逼近对象的几何模型，直到几乎完全获得对象的几何特征。
+
+#### 1.2) 组织结构
+
+​	场景以层次树结构进行组织，包含一个**根节点**（root）、一些**内部节点**（internal nodes），以及一些**叶子节点**（leaves）。
+
+​	树中的所有节点都含有一个包围体，将其**子树中的所有几何体**包围起来。BVH经常用于**视锥裁剪**。
+
+<img src=".\pic\cg_bvh.jpg" alt="cg_bvh" style="zoom:40%;" />
+
+#### 1.3) 构建思路
+
+​	① 计算场景中每一个图元的AABB包围盒、质心（一般取包围盒的中心）并存储到数组中。
+
+​	② 根据不同的划分策略(最长轴、SAH等)构建树状索引结构。
+
+​	③ 将得到二叉树转化更加紧凑的表示形式（无指针，内存连续）。
+
+#### 1.4) 最长轴构建BVH树
+
+​	本小节参考自[https://zhuanlan.zhihu.com/p/475966001?utm_id=0](https://zhuanlan.zhihu.com/p/475966001?utm_id=0)：
+
+```c++
+BVHBuildNode* BVHAccel::recursiveBuild(std::vector<Object*> objects)
+{
+    BVHBuildNode* node = new BVHBuildNode();
+    if (objects.size() == 1)//递归结束条件
+    { 
+        // Create leaf _BVHBuildNode_
+        node->bounds = objects[0]->getBounds();
+        node->object = objects[0];
+        node->left = nullptr;
+        node->right = nullptr;
+        return node;
+    }
+    else if (objects.size() == 2)//objects为2时，左右各分一个
+    {
+        node->left = recursiveBuild(std::vector{objects[0]});
+        node->right = recursiveBuild(std::vector{objects[1]});
+        node->bounds = Union(node->left->bounds, node->right->bounds);//返回包围盒并集
+        return node;
+    }
+    else 
+    {
+        Bounds3 centroidBounds;
+        for (int i = 0; i < objects.size(); ++i)
+            centroidBounds = Union (centroidBounds, objects[i]->getBounds().Centroid());
+        int dim = centroidBounds.maxExtent(); 
+        switch (dim) 
+        {
+        case 0: //最宽在x轴
+            std::sort(objects.begin(), objects.end(), [](auto f1, auto f2) {
+                return f1->getBounds().Centroid().x < f2->getBounds().Centroid().x;
+            });
+            break;
+        case 1: //最宽在y轴
+            std::sort(objects.begin(), objects.end(), [](auto f1, auto f2) {
+                return f1->getBounds().Centroid().y < f2->getBounds().Centroid().y;
+            });
+            break;
+        case 2: //最宽在z轴
+            std::sort(objects.begin(), objects.end(), [](auto f1, auto f2) {
+                return f1->getBounds().Centroid().z < f2->getBounds().Centroid().z;
+            });
+            break;
+        }
+        auto beginning = objects.begin();
+        auto middling = objects.begin() + (objects.size() / 2);
+        auto ending = objects.end();
+
+        auto leftshapes = std::vector<Object*>(beginning, middling); //数组切分
+        auto rightshapes = std::vector<Object*>(middling, ending);
+
+        assert(objects.size() == (leftshapes.size() + rightshapes.size()));
+        //左右开始递归
+        node->left = recursiveBuild(leftshapes); 
+        node->right = recursiveBuild(rightshapes);
+        node->bounds = Union(node->left->bounds, node->right->bounds);
+    }
+    return node;
+}
+```
+
+#### 1.5) 基于SAH构建BVH树
+
+​	由于BVH存在着包围盒重叠的问题，若一个空间中物体分布不均匀，比如右边存在大量物体，而左边只有少量物体，此时使用BVH就会得到很差的划分结果。
+
+​	SAH(Surface Area Heuristic)，通过对求交代价和遍历代价进行评估，给出了每一种划分的代价（Cost），寻找代价最小方式进行划分：确定最小重叠面积的轴向。
+
+#### 1.6) 适用场景
+
+​	BVH的构建相对比较耗时间，且对于动态物体的支持比较麻烦。
+
+​	但是射线求交的运行效率会更高，因此常用于离线渲染和光线追踪以及碰撞检测等对性能要求较高的场合。
+
+### 2) 八叉树OcTree
+
+​	空间八叉树是对**场景的划分**。
+
+<img src=".\pic\cg_oc_tree.png" alt="cg_oc_tree" style="zoom:50%;" />
+
+#### 2.1) 组织结构
+
+**节点结构**
+
+- 每个节点包含一个包围盒用于表示该节点所包含的空间范围。
+- 节点可能包含**零个或多个**对象，这些对象是该节点所表示空间范围内的物体。
+- 八叉树将空间递归地划分为八个子节点，直到节点包含的对象**数量达到某个限制**，或者**达到最小节点大小**，不再继续划分，成为叶子节点。
+
+**添加对象**
+
+- 当需要向八叉树中添加对象时，从根节点开始递归地查找合适的叶子节点。
+- 将对象添加到叶子节点中。如果该节点包含的对象数量超过限制，可以考虑划分该节点。
+
+**查询**
+
+- 对于空间查询，从根节点开始，检查查询范围与每个节点的包围盒是否相交。
+- 如果相交，进一步检查该节点的子节点，递归地沿着相交的子节点继续查询，直到达到叶子节点。
+- 叶子节点包含在查询范围内的对象。
+
+#### 2.2) 适用场景
+
+​	空间局部性：八叉树有效地利用了物体在三维空间中的局部性，提高了检索效率。
+
+​	动态场景：适用于动态场景，因为对象的添加和删除**只影响八叉树的局部结构**。
 
 # 渲染管线
 

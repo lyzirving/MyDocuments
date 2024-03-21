@@ -1170,6 +1170,177 @@ for(int i = 0; i < steps; i++)
 
 # 抗锯齿技术
 
+## 1 走样产生的原因
+
+<img src=".\pic\cg_anti_aliasing.png" alt="cg_anti_aliasing" style="zoom:80%;" />
+
+​	屏幕空间的**三角形坐标**理论上是**连续的**，而屏幕上的像素是**离散的**，光栅化是将连续的顶点离散化的过程。
+
+​	每个像素有自己的**中心点**，三角形的顶点属性会被**插值**到中心点上。
+
+​	像素会利用中心点进行**coverage sample**，判断自身是否被三角形遮盖，只有**被覆盖的像素**才会执行片段着色器(使用像素中心点的顶点属性)。
+
+​	因此，在对图像边缘进行coverage sample时，由于屏幕**像素总量的限制**，有些边缘的像素能够被渲染出来，而有些则不会，从而形成了**走样(aliasing)**。
+
+<img src=".\pic\cg_aliasing.png" alt="cg_aliasing" style="zoom:80%;" />
+
+## 2 SSAA(Super Sampling AA)
+
+​	以4xSSAA为例，假设最终屏幕输出的分辨率是800x600。
+
+​	4xSSAA会先渲染到一个分辨率1600x1200的buffer上，然后再直接把这个放大4倍的buffer**下采样**致800x600。
+
+​	这种做法在数学上是最完美的抗锯齿。但是劣势也很明显，光栅化和着色的计算负荷都比原来多了4倍，**render target**的大小也涨了4倍。
+
+## 3 MSAA(Multi-Sampling AA)
+
+### 1) 实现原理
+
+​	MSAA在进行coverage sample时，会使用**多个采样点**来判断三角形的遮蔽性。下图是4xMSAA，它会使用4个采样点来判断遮蔽性。
+
+​	在片段着色阶段，仍然使用像素中心点执行**一次着色**。最后，在向color buffer写入颜色时，会根据**遮蔽点/采样点比例和着色结果**写入最终颜色。
+
+<img src=".\pic\cg_msaa.png" alt="cg_msaa" style="zoom:80%;" align="left"/><img src=".\pic\cg_msaa_result.png" alt="cg_msaa_result" style="zoom:50%;" />
+
+### 2) MSAA对其他阶段的影响
+
+​	MSAA开启后，不仅是颜色值会受到影响，**深度**和**模板**测试也能够使用多个采样点。
+
+​	对深度测试来说，每个顶点的深度值会在运行深度测试之前被插值到各个子样本中。
+
+​	对模板测试来说，我们对每个子样本，而不是每个像素，存储一个模板值。
+
+​	当然，这意味着深度和模板缓冲的大小会乘以子采样点的个数。
+
+​	NV的CSAA，它把coverage sample和depth，stencil test分开了，就不会有上述特性。
+
+### 3) 适用场景
+
+​	MSAA适用于前向渲染，与延迟渲染不兼容。
+
+​	延迟渲染把场景提前光栅化到GBuffer上去了，GBuffer丢弃了几何信息，无法使用多个采样点进行coverage sample。
+
+​	下述论文介绍了延迟渲染下的MSAA：[Multisample anti-aliasing in deffered rendering](https://diglib.eg.org/bitstream/handle/10.2312/egs20201008/021-024.pdf)。
+
+## 4 FXAA
+
+​	本小节参考自[主流抗锯齿方案详解（三）FXAA](https://zhuanlan.zhihu.com/p/431384101)。
+
+​	FXAA(**fast approximate antialiasing**)是一种后处理技术，适用于前向/延迟渲染。
+
+​	大部分情况下，需要抗锯齿的部分，其实都在物体边缘或者高光变化的部分。
+
+​	通过后处理的方式，**检测**出图像块之间的**边缘**，然后根据边缘信息对**边缘两侧的图像进行混合处理**，达到抗锯齿的效果。这类基于后处理的抗锯齿方式也叫做**形变抗锯齿/Morphological antialiasing**。
+
+<img src=".\pic\cg_fxaa.png" alt="cg_fxaa" style="zoom:50%;" />
+
+​	XAA 3.11 版本是将近十年前的版本了，其包含两个子版本：
+
+​	**FXAA Quality**：注重抗锯齿质量，相对消耗性能。现代手机的性能都比较高，目前手机上的游戏使用 FXAA Quality版本较多。
+
+​	**FXAA Console**：注重抗锯齿速度，相对性能友好。主要面向于 PS3，抗锯齿质量不高，得到的图像非常的模糊。
+
+### 1) FXAA Quality实现
+
+#### 1.1) 边界判断：确定是否需要混合
+
+​	FXAA 通过确定水平和垂直方向上像素点的**亮度差**，来计算对比值。
+
+​	若对比度超过阈值，认为需要进行抗锯齿处理。
+
+​	亮度的求解公式为：$L = 0.213 * R + 0.715 * G + 0.072 * B$。
+
+<img src=".\pic\cg_fxaa_constrast.png" alt="cg_fxaa_constrast" style="zoom:50%;" />
+
+​	伪代码如下：
+
+```c++
+// 求N、W、E、S、M的亮度
+.......
+float MaxLuma = max(N_Lu, E_Lu, W_Lu, S_Lu, M_Lu);
+float MinLuma = min(N_Lu, E_Lu, W_Lu, S_Lu, M_Lu);
+// 周围5个像素点，最大亮度和最小亮度的差，作为对比度
+float Contrast =  MaxLuma - MinLuma;
+if(Contrast >= max(_MinThreshold, MaxLuma * _Threshold))
+{
+	// do something    
+}
+```
+
+#### 1.2) 基于亮度的混合系数计算
+
+<img src=".\pic\cg_fxaa_blend_factor.png" alt="cg_fxaa_blend_factor" style="zoom:50%;" align="left" /><img src=".\pic\cg_fxaa_blend_weight.png" alt="cg_fxaa_blend_factor" style="zoom:50%;" />
+
+​	
+
+​	为了使混合系数更加精确，需要对对角线上的四个点进行采样并计算亮度值。对角像素距离中心像素比较远，所以计算平均亮度值时的权重会略微低一些。
+
+​	现通过计算目标像素和周围像素点的**平均亮度的差值**，来确定将来进行颜色混合时的权重。
+
+```c++
+// 求N、W、E、S、M的亮度
+.......
+// 按照相应权重，将周围像素点亮度相加
+float Filter = 2 * (N_Lu + E_Lu + S_Lu + W_Lu) + NE_Lu + NW_Lu + SE_Lu + SW_Lu;
+Filter = Filter / 12;
+
+// 计算出基于亮度的混合系数
+Filter = abs(Filter -  M_Lu);
+Filter = saturate(Filter / Contrast); //saturate将val夹取到 [0,1]区间
+
+// 使输出结果更加平滑
+float PixelBlend = smoothstep(0, 1, Filter);
+PixelBlend = PixelBlend * PixelBlend;
+```
+
+#### 1.3) 计算混合方向
+
+​	接下来要确定混合方向：
+
+<img src=".\pic\cg_fxaa_blend_dir.png" alt="cg_fxaa_blend_dir" style="zoom:50%;" />
+
+​	如果水平方向的亮度变化较大，锯齿边界就是垂直的，沿水平方向进行混合；
+
+​	如果垂直方向的亮度变化较大，锯齿边界是水平的，按垂直方向进行混合。
+
+```c++
+// 计算垂直方向的亮度变化幅度
+float Vertical = abs(N + S - 2 * M) * 2+ abs(NE + SE - 2 * E) + abs(NW + SW - 2 * W);
+// 计算水平方向亮度变化幅度
+float Horizontal = abs(E + W - 2 * M) * 2 + abs(NE + NW - 2 * N) + abs(SE + SW - 2 * S);
+// 若垂直方向亮度差大于水平方向亮度差, 锯齿是水平的, 按垂直方向混合
+bool bBlendHorizontal = Vertical > Horizontal;
+// 根据边界方向，先算出后面搜索时的步长
+float2 PixelStep = bBlendHorizontal ? 
+                   float2(0, _MainTex_TexelSize.y) : float2(_MainTex_TexelSize.x, 0);
+```
+
+​	确定混合的正负方向，规定向上为正，向右为正：
+
+```c++
+float Positive = abs((IsHorizontal ? N : E) - M);
+float Negative = abs((IsHorizontal ? S : W) - M);
+if(Positive < Negative) PixelStep = -PixelStep;
+```
+
+#### 1.4) 混合
+
+​	根据之前计算的混合系数和方向，取得待混合的像素值，并最终完成混合。
+
+```c++
+float4 Result = tex2D(_MainTex, UV + PixelStep * PixelBlend);
+```
+
+#### 1.5) 优化边界混合系数
+
+​	上述流程中，**斜向的锯齿**，效果其实不太好。
+
+​	这是因为只根据目标像素点周围**3X3**的像素点进行采样分析，并且假设锯齿边界是**完全垂直**或者**水平的**。
+
+​	但是很多时候，锯齿边界是带有角度的。
+
+​	因此，要得到得到正确的混合系数，就需要将**采样范围扩展**到3X3像素块之外，求出锯齿边界的**倾斜角度**。
+
 # ShadowMap
 
 ## 1 基本概念

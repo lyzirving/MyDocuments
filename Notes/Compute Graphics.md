@@ -1226,9 +1226,9 @@ for(int i = 0; i < steps; i++)
 
 ​	本小节参考自[主流抗锯齿方案详解（三）FXAA](https://zhuanlan.zhihu.com/p/431384101)。
 
-​	FXAA(**fast approximate antialiasing**)是一种后处理技术，适用于前向/延迟渲染。
+​	快速近似抗锯齿FXAA(**fast approximate antialiasing**)是一种通过平滑像素进行后处理的技术，适用于前向/延迟渲染。
 
-​	大部分情况下，需要抗锯齿的部分，其实都在物体边缘或者高光变化的部分。
+​	大部分情况下，需要抗锯齿的部分，其实都在物体**边缘**或者**高光变化**的部分。
 
 ​	通过后处理的方式，**检测**出图像块之间的**边缘**，然后根据边缘信息对**边缘两侧的图像进行混合处理**，达到抗锯齿的效果。这类基于后处理的抗锯齿方式也叫做**形变抗锯齿/Morphological antialiasing**。
 
@@ -1240,9 +1240,9 @@ for(int i = 0; i < steps; i++)
 
 ​	**FXAA Console**：注重抗锯齿速度，相对性能友好。主要面向于 PS3，抗锯齿质量不高，得到的图像非常的模糊。
 
-### 1) FXAA Quality实现
+### 1) FXAA Quality
 
-#### 1.1) 边界判断：确定是否需要混合
+- 边界判断：确定是否需要混合
 
 ​	FXAA 通过确定水平和垂直方向上像素点的**亮度差**，来计算对比值。
 
@@ -1251,8 +1251,6 @@ for(int i = 0; i < steps; i++)
 ​	亮度的求解公式为：$L = 0.213 * R + 0.715 * G + 0.072 * B$。
 
 <img src=".\pic\cg_fxaa_constrast.png" alt="cg_fxaa_constrast" style="zoom:50%;" />
-
-​	伪代码如下：
 
 ```c++
 // 求N、W、E、S、M的亮度
@@ -1267,7 +1265,7 @@ if(Contrast >= max(_MinThreshold, MaxLuma * _Threshold))
 }
 ```
 
-#### 1.2) 基于亮度的混合系数计算
+- 计算基于亮度的混合系数
 
 <img src=".\pic\cg_fxaa_blend_factor.png" alt="cg_fxaa_blend_factor" style="zoom:50%;" align="left" /><img src=".\pic\cg_fxaa_blend_weight.png" alt="cg_fxaa_blend_factor" style="zoom:50%;" />
 
@@ -1293,9 +1291,8 @@ float PixelBlend = smoothstep(0, 1, Filter);
 PixelBlend = PixelBlend * PixelBlend;
 ```
 
-#### 1.3) 计算混合方向
+- 计算混合方向
 
-​	接下来要确定混合方向：
 
 <img src=".\pic\cg_fxaa_blend_dir.png" alt="cg_fxaa_blend_dir" style="zoom:50%;" />
 
@@ -1323,23 +1320,89 @@ float Negative = abs((IsHorizontal ? S : W) - M);
 if(Positive < Negative) PixelStep = -PixelStep;
 ```
 
-#### 1.4) 混合
+- 混合	
 
-​	根据之前计算的混合系数和方向，取得待混合的像素值，并最终完成混合。
+根据之前计算的混合系数和方向，取得待混合的像素值，并最终完成混合。
 
 ```c++
 float4 Result = tex2D(_MainTex, UV + PixelStep * PixelBlend);
 ```
 
-#### 1.5) 优化边界混合系数
+- 优化边界混合系数
 
-​	上述流程中，**斜向的锯齿**，效果其实不太好。
+​	上述流程中，**斜向的锯齿**，效果不太好。
 
 ​	这是因为只根据目标像素点周围**3X3**的像素点进行采样分析，并且假设锯齿边界是**完全垂直**或者**水平的**。
 
-​	但是很多时候，锯齿边界是带有角度的。
+​	很多时候，锯齿边界是带有角度的。因此，要得到得到正确的混合系数，就需要将**采样范围扩展**到3X3像素块之外，求出锯齿边界的**倾斜角度**。如下图所示，优化流程参考前述链接。
 
-​	因此，要得到得到正确的混合系数，就需要将**采样范围扩展**到3X3像素块之外，求出锯齿边界的**倾斜角度**。
+<img src=".\pic\cg_fxaa_optimize.png" alt="cg_fxaa_optimize" style="zoom:70%;" />
+
+### 2) FXAA Console
+
+​	FXAA Quality需要的采样次数比较多，FXAA Console每个点只需要**五次采样**。
+
+​	Console版本寻找**当前像素点亮度变化的梯度值**，作为**锯齿线的法线方向**。采样点如下，注意，采样中间点和NW、NE、SW和SE四个角点，且**偏移值为半个像素**。
+
+![cg_fxaa_console](.\pic\cg_fxaa_console.png)
+
+- 计算阈值，判断是否需要进行抗锯齿
+
+```c++
+float MaxLuma = max(NW, NE, SW, SE);
+float MinLuma = min(NW, NE, SW, SE);
+float Contrast =  max(MaxLuma, M) -  min(MinLuma, M);
+if(Contrast >= max(_MinThreshold, MaxLuma * _Threshold))
+{
+    ......
+}
+```
+
+- 计算亮度变化梯度
+
+​	即计算出**亮度变化最快的方向**，作为锯齿边界的**法线方向**，从而得到锯齿边界的**切线方向**。
+
+![cg_fxaa_console_normal](.\pic\cg_fxaa_console_normal.png)
+
+​	上图中，红色箭头即法线方向，绿色箭头即切线方向。
+
+- 沿切线方向采样，平均后作为抗锯齿结果
+
+```c++
+float4 N1 = tex2D(_MainTex, UV + Dir1);
+float4 P1 = tex2D(_MainTex, UV - Dir1);
+float4 Result = (N1 + P1) * 0.5f;
+```
+
+​	这种方式对于斜向的锯齿比较友好，但是对于水平和垂直方向的锯齿，却不是很友好。
+
+- 延伸采样方向
+
+​	将偏移距离延伸至更远处，采样到越远的地方。
+
+​	具体的做法就是取Dir向量分量的最小值的倒数，将Dir1进行缩放。如果Dir的最小分量的值越小，就能采样到越远的地方。
+
+```c++
+float DirAbsMinTimesC = min(abs(Dir.x), abs(Dir.y)) * _Sharpness;
+// 将偏移距离进行放大，锯齿越接近水平或垂直方向，放大的系数也就越大
+float2 Dir2 = clamp(Dir1 / DirAbsMinTimesC, -2, 2) * 2;
+```
+
+​	_Sharpness是控制锐利程度的参数值，一般取8。
+
+​	为了防止 Dir2 采样到亮度变化较大的区域，产生噪点，再对 Dir2 采样到的亮度值进行一次判断，如果得到的结果超过了周围最小最大的亮度范围，则丢弃新的采样的结果：
+
+```c++
+float4 N2 = tex2D(_MainTex, UV + Dir2 * _MainTex_TexelSize.xy);
+float4 P2 = tex2D(_MainTex, UV - Dir2 * _MainTex_TexelSize.xy);
+float4 Result2 = Result * 0.5f + (N2 + P2) * 0.25f;
+// 判断下结果是否在合适的范围内
+if(Luminance(Result2.xyz) > MinLuma && Luminance(Result2.xyz) < MaxLuma) {
+    Result = Result2;
+}
+```
+
+ 	Console 版本每个像素点最多只需要进行9次采样，比 Quality 版本要少很多，当然得到的效果也差很多，整体看起来会比较模糊。
 
 # ShadowMap
 

@@ -1615,6 +1615,218 @@ k = &j; //Error
 
 ​	常量表达式函数的返回值可以在编译阶段就计算出来。不过在定义常量表示函数的时候，我们会遇到更多的约束规则。
 
+## 11 volatile关键字
+
+### 1) volatile的特性
+
+#### 1.1) 易变性
+
+​	`volatile`提醒编译器它后面所定义的变量随时都有可能改变，因此编译后的程序每次必须从内存中读取变量的数据。
+
+​	假设有写、读两条语句，依次对同一个 `volatile` 变量进行操作，那么后一条的读操作不会直接使用前一条的写操作对应的的**寄存器**里的内容，而是重新**从内存中读取**该 `volatile` 变量的值。
+
+​	编译器有时候会从寄存器处取变量的值，而**不是每次都从内存中取**。因为① 编译器认为变量并没有变化，所以认为寄存器里的值是最新的。② 访问寄存器比访问内存要快很多，编译器通常为了效率，可能会读取寄存器中的变量。
+
+​	但是，**变量在内存中的值可能会被其它元素修改**，比如：硬件或其它线程等。
+
+#### 1.2) 不可优化
+
+​	编译器不会对 `volatile` 声明的变量进行各种激进的优化(甚至将变量直接消除)，保证代码中的指令一定会被执行。
+
+```c++
+volatile int nNum;  // 将nNum声明为volatile
+nNum = 1;
+printf("nNum is: %d", nNum);
+```
+
+​	上述代码中，如果变量 `nNum` 没有声明为 `volatile` 类型，则编译器在编译过程中中就会对其进行优化，直接使用常量“1”进行替换，这样优化之后，生成的汇编代码很简介，执行时效率很高。
+
+​	当使用 `volatile` 进行声明后，编译器则不会对其进行优化，nNum 变量仍旧存在，编译器会将该变量从内存中取出，放入寄存器之中，然后再调用 printf() 函数进行打印。
+
+#### 1.3) 顺序性
+
+​	`volatile` 变量之间的顺序性不会被**编译器**进行乱序优化。
+
+### 2) volatile不能保证原子性
+
+​	`volatile`不保证原子性。它只是保证每次都做内存访问、编译器不做优化。要实现原子性需要加锁完成。
+
+​	有下述伪代码：
+
+```c++
+// global shared data
+bool flag = false; // (1)
+
+thread2(Type* value) 
+{
+    value->update(/* parameters */);
+    flag = true;
+    return;
+}
+
+thread1() 
+{
+    flag = false; // (2)
+    Type* value = new Type;
+    thread2(value);
+    while (true)
+    {
+        if (flag == true) // (3)
+        {
+            apply(value);
+            break;
+        }
+    }
+    thread2.join();
+    if (nullptr != value) { delete value; }
+    return;
+}
+```
+
+​	上述代码的语义是：thread1等待thread2将value更新后，再继续执行。
+
+​	对于多线程编程，上述代码有两个问题：
+
+① 在thread1中，从(2)到(3)，代码没有对flag修改，因此编译器可能将`if(flag == true)`优化掉；
+
+② 在thread2中，尽管逻辑上`update()`在`flag = true`前执行，但编译器和CPU并不知道。因此实际执行时，二者顺序可能发生变化。
+
+​	假如在(1)，将flag声明为`volatile`的，由于`if(flag == true)`是对volatile变量的访问，因此编译器不会优化它，从而肯定能保留该条件的判断，问题①得到了解决。但是问题②仍然存在。
+
+​	若把`value`也声明为volatile，如`volatile Type *value = new Type;`，那么问题②能解决吗？
+
+​	`volatile` 只作用在编译器上。代码最终是要运行在 CPU 上的。尽管编译器不会将(3)处换序，但CPU的乱序执行仍然可能交换`value` 和 `flag` 的赋值顺序。且new操作符不是原子的，它要执行分配空间、构造调用、指针赋值这三个操作。
+
+​	最终，只能通过**atomic**或**加锁**来修改上述程序。
+
+## 12 inline关键字
+
+### 1) inline关键字的作用
+
+​	允许一个函数在**多个编译单元中重复存在**(**每个源文件**即一个编译单元)。
+
+### 2) 内联函数
+
+​	内联函数以**代码膨胀为代价**，省去了**函数调用的开销**，从而提高执行效率。
+
+​	**每一处**内联展开都要复制代码，将使程序的总代码量增大，消耗更多的内存空间。下述函数默认是内联函数：
+
+① 模板函数默认是内联函数；
+
+② 类定义中直接定义的成员函数，默认是内联函数。
+
+### 3) inline关键字和内联函数没有关系
+
+​	本小节主要参考自[C++ inline有什么用？](https://www.zhihu.com/question/24185638)。
+
+​	现代的编译器在决定是否将函数执行内联展开时，**不参考**函数声明中inline修饰符。
+
+​	inline关键字不仅能修饰函数，也可修饰命名空间(C++11以后)，修饰变量(C++17以后)。
+
+​	inline主要作用是允许**同一个函数或变量的定义出现在多个编译单元之中**。
+
+#### 3.1) inline修饰函数
+
+##### (1) 函数在头文件中
+
+```c++
+/* foo.h */
+inline int foo(int x) {
+    static int factor = 1;
+    return x * (factor++);
+}
+
+/* bar1.cc */
+#include "foo.h"
+int bar1() {
+    return foo(1);
+}
+
+/* bar2.cc */
+#include "foo.h"
+int bar2() {
+    return foo(2);
+}
+
+/* main.cc */
+int Bar1(), Bar2();
+int main() {
+    return Bar1() + Bar2();
+}
+```
+
+​	编译源文件，并链接生成可执行程序，有：
+
+```c++
+g++ -c main.cc bar1.cc bar2.cc -fno-gnu-unique  # ok
+g++ -o main main.o bar1.o bar2.o                # ok
+./main; echo $? # 5
+```
+
+​	上述没有发生multiple definition错误，并且main的输出表明两次调用使用了同一个局部静态变量factor。
+
+​	使用**readelf**查看输出的可执行main文件的**符号表**，
+
+```c++
+readelf -s main
+// --------------------------
+Num:    Value          Size Type    Bind   Vis      Ndx Name
+...
+49: 0000000000004010    4 OBJECT  WEAK   DEFAULT   23 _ZZ3FooiE6factor
+...
+53: 000000000000115f    32 FUNC    WEAK   DEFAULT   14 _Z3Fooi
+...
+```
+
+​	可以发现main中Foo和静态变量factor的定义只有一份，且Foo和factor都是**WEAK**符号。
+
+##### (2) 函数在源文件中
+
+```c++
+/* bar1.cc */
+inline int Foo(int x) {
+    static int factor = 1;
+    return x * (factor++);
+}
+int Bar1() {
+    return Foo(1);
+}
+
+/* bar2.cc */
+inline int Foo(int x) {
+    static int factor = 2;
+    return x * (factor++);
+}
+int Bar2() {
+    return Foo(2);
+}
+
+/* main.cc */
+int Bar1(), Bar2();
+int main() {
+    return Bar1() + Bar2();
+}
+```
+
+​	对于上述例子，编译器很可能根据**源文件的编译顺序**从而决定使用哪个Foo：
+
+```c++
+g++ -o main main.cc bar1.cc bar2.cc -fno-gnu-unique # ok
+./main; echo $? # 5
+g++ -o main main.cc bar2.cc bar1.cc -fno-gnu-unique # ok
+./main; echo $? # 8
+```
+
+​	故应该尽量避免上述情况发生：既无法保证对方的定义与你相同，也无法保证链接器最终选择的定义。
+
+​	如果此时有个编译单元中的Foo没有声明为inline，该单元对应的版本的符号是**全局的强符号**，链接器在面对多个弱符号和一个强符号时一定会采用强符号对应的定义。因此该版本的定义会覆盖其它单元所定义的inline版本。
+
+​	如果一定要在多个编译单元中定义同名函数，要么将其声明为**static**，要么将其声明在**不同的命名空间中**。
+
+#### 3.2) inline修饰命名空间(C++11)
+
+#### 3.3) inline修饰变量(C++17)
+
 # 标准库数据结构
 
 ## 1 map和unordered_map

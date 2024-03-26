@@ -1094,6 +1094,34 @@ for(int i = 0; i < steps; i++)
 
 ​	分母$4(l\cdot n)(v \cdot n)$：校正因子（correctionfactor），作为微观几何的局部空间和整个宏观表面的局部空间之间变换的微平面量的校正。
 
+## 5 IBL
+
+​	基于图像的光照(Image based lighting)将环境视为一个大光源，本质是使用环境立方体贴图 (Cubemap) ，将立方体贴图的每个像素视为光源，在渲染方程中直接使用它：用方向向量$\omega_{i}$ 对立方体贴图采样，从而获取该方向上的**场景辐照度**。
+
+### 1) 分解IBL
+
+​	渲染方程如下：<img src=".\pic\cg_reflection_equation.png" alt="cg_reflection_equation" style="zoom:100%;" />
+
+​	把BRDF展开有：<img src=".\pic\cg_reflection_equation_brdf.png" alt="cg_reflection_equation" style="zoom:100%;" />
+
+​	由于漫反射系数$k_{d}$和高光系数$k_{s}$是独立的，因此可拆分为：<img src=".\pic\cg_reflection_equation_extend.png" alt="cg_reflection_equation" style="zoom:100%;" />
+
+​	综上，积分可拆解为**漫反射**和**镜面反射**部分。
+
+### 2) 漫反射辐照度
+
+​	漫反射辐照度中，$k_{d}、c、\pi$都是常数，因此有：<img src=".\pic\cg_reflection_equation_diffuse_irradiance.png" alt="cg_reflection_equation_diffuse_irradiance" style="zoom:100%;" />
+
+​	上述积分是依赖于$\omega_{i}$的，因此可**预计算**出一个新的立方体贴图，该立方体贴图的采样参数是$\omega_{o}$。
+
+​	在每个$\omega_{o}$上，通过卷积求得其所在半球$\Omega$上漫反射积分的结果，作为$\omega_{o}$的辐照度，如下所示：
+
+<img src=".\pic\ibl_hemisphere_sample.png" alt="ibl_hemisphere_sample" style="zoom:70%;" />
+
+​	下图是漫反射辐照度的计算结果，辐照度图看起来像环境的平均颜色或光照图：
+
+<img src=".\pic\ibl_diffuse_irradiance.png" alt="ibl_diffuse_irradiance" style="zoom:70%;" />
+
 # 纹理
 
 ## 1 纹理环绕

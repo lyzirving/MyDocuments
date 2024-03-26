@@ -100,6 +100,65 @@ $N \cdot \vec{OA}=|N||\vec{OA}|cos\theta$
 - 若A在平面上(即OA和法线夹角等于90)，$ax+by+cz+d = 0$。
 - 若A在平面下方(即OA和法线夹角大于90)，$ax+by+cz+d < 0$。
 
+# 背景知识
+
+## 1 HDR理论
+
+### 1) 动态范围Dynamic Range
+
+​	动态范围(Dynamic Range，DR)是影像中**最亮的点**与**最暗的点**之间的比值，即从最亮点到最暗点所跨过的灰度等级。
+
+​	动态范围越高，表示色彩亮度层次越丰富，色彩空间越广阔。
+
+$Dynamic Range = Log_{10}(Max/Min)$
+
+- Max: 像素通道能表示的最大亮度强度，如 8bit 颜色通道能表示的最大亮度强度是 255。
+- Min：像素通道能表示的最小亮度强度，如 8bit 颜色通道表示的最小亮度强度是 1。
+
+​	8 bit 通道图像能容纳的动态范围约为：2.4。
+
+​	OpenEXR 图像格式能容纳的动态范围约为：12。
+
+​	人眼能够感知的动态范围为：9。
+
+### 2) LDR和HDR
+
+#### 2.1) LDR及有限的数据精度
+
+​	**LDR**(Low dynamic range)：计算机内常用的颜色是RGBA8888，即每个通道的亮度宽度为8bit，在GPU中会自动将**byte[0, 255]**转换成**float[0, 1]**。
+
+​	自然界的色彩亮度丰富，使用 [0, 1] 是完全不够的。
+
+​	当一张图片中亮度跨度过大，因为亮度精度的原因就会出现**亮度高的区域全部变成白色**，**亮度低的区域完全变成黑色的现象**。这是因为LDR的**数据描述精度很有限**造成的。
+
+#### 2.2) HDR
+
+​	将亮度跨度远远超出 [0, 1] 的数据称为HDR(Hight dynamic range)。
+
+​	HDR图像一般使用浮点像素格式来存储较高的动态范围。常用的HDR图像格式有：OpenEXR(.EXR)，Radiance RGBE(.HDR)，FloatTIFF(.TIF)。
+
+- Radiance RGBE(.hdr)格式介绍
+
+​	Radiance RGBE(.hdr)存储了一张完整的立方体贴图，这张环境贴图是从**球体投影到平面**上，从而可以轻松地将环境信息存储到一张等距柱状投影图中。
+
+​	立方体贴图所有六个面数据都是浮点数，允许指定 0.0 到 1.0 范围之外的颜色值。
+
+​	它并非直接存储每个通道的32位数据，而是每个通道存储**8位**，再以 alpha 通道存放指数。这样做确实会导致**精度损失**，但是非常有效率，但需要解析程序将每种颜色重新转换为它们的**浮点数等效值**。
+
+#### 2.3) VDR
+
+​	HDR到底多高才算High并没有一个统一的标准，比如 A 的HDR数据范围为[0, 32]，而B的HDR数据的范围为 [0, 64]，A与B都是HDR数据，但完全不一样，因此 VDR 的概念应运而生。
+
+### 3) 色调映射(Tone Mapping)
+
+​	因为HDR图像的亮度范围已经超出了[0, 1]这个范围，显示器无法正确的显示HDR图像的颜色。
+
+​	**因此需要将HDR图像数据映射到[0, 1]之间，这个过程就叫做色调映射。**
+
+​	色调映射算法的本质是：用一个函数，将**[0, n]**的HDR数据映射到**[0, 1]**，这个函数就是**色调映射的算法**。
+
+​	在游戏开发中色调映射算法有很多种，最简单的是 Reinhard tone mapping，最常用的有 Filmic tone mapping、ACES tone mapping。Tone mapping相关可参考[Tone mapping进化论 - 知乎](https://zhuanlan.zhihu.com/p/21983679?refer=highwaytographics)。
+
 # 图形基本算法
 
 ## 1 点和射线的距离
@@ -1121,6 +1180,66 @@ for(int i = 0; i < steps; i++)
 ​	下图是漫反射辐照度的计算结果，辐照度图看起来像环境的平均颜色或光照图：
 
 <img src=".\pic\ibl_diffuse_irradiance.png" alt="ibl_diffuse_irradiance" style="zoom:70%;" />
+
+#### 2.1) 将HDR转换为CubeMap
+
+​	PBR 的大部分输入基于实际物理属性和测量，为入射光值找到其[物理等效值(流明)](https://zh.wikipedia.org/wiki/流明)是很重要的。
+
+​	如果这些参数不在HDR渲染环境中工作，那么就无法指定每个光的相对强度。因此需要将光照的高动态范围(High dynamic range, HDR)存储到环境贴图中。
+
+##### 2.1.1) 加载HDR
+
+​	HDR的格式组成，可参考<a href="####2.2) HDR">HDR小节</a>。std_image.h已经封装了对.hdr的加载：自动将HDR值映射到浮点数数组中，每个颜色3通过，每个通道32位。
+
+##### 2.1.2) 等距柱状图投影到立方体贴图
+
+​	渲染一个单位立方体，从内部将等距柱状图投影到立方体的每个面，并将立方体的六个面的图像构造成立方体贴图，着色器如下：
+
+```glsl
+##vertex shader
+
+#version 330 core
+layout (location = 0) in vec3 aPos;
+
+out vec3 localPos;
+
+uniform mat4 projection;
+uniform mat4 view;
+
+void main()
+{
+    localPos = aPos;  
+    gl_Position =  projection * view * vec4(localPos, 1.0);
+}
+
+##fragment
+#version 330 core
+out vec4 FragColor;
+in vec3 localPos;
+
+uniform sampler2D equirectangularMap;
+
+const vec2 invAtan = vec2(0.1591, 0.3183);
+vec2 SampleSphericalMap(vec3 v)
+{
+    vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
+    uv *= invAtan;
+    uv += 0.5;
+    return uv;
+}
+
+void main()
+{       
+    vec2 uv = SampleSphericalMap(normalize(localPos)); // make sure to normalize localPos
+    vec3 color = texture(equirectangularMap, uv).rgb;
+
+    FragColor = vec4(color, 1.0);
+}
+```
+
+#### 2.2) 制作辐照度贴图(卷积)
+
+#### 2.3) 渲染漫反射辐照度
 
 # 纹理
 

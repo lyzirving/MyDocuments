@@ -1189,7 +1189,7 @@ for(int i = 0; i < steps; i++)
 
 ##### 2.1.1) 加载HDR
 
-​	HDR的格式组成，可参考<a href="####2.2) HDR">HDR小节</a>。std_image.h已经封装了对.hdr的加载：自动将HDR值映射到浮点数数组中，每个颜色3通过，每个通道32位。
+​	HDR的格式组成，可参考<a href="####2.2) HDR">HDR小节</a>。std_image.h已经封装了对.hdr的加载：自动将HDR值映射到浮点数数组中，每个颜色3通道，每个通道32位。
 
 ##### 2.1.2) 等距柱状图投影到立方体贴图
 
@@ -1238,6 +1238,41 @@ void main()
 ```
 
 #### 2.2) 制作辐照度贴图(卷积)
+
+​	得到了HDR环境贴图后，在$\omega_{i}$采样，可以获得此方向上的辐射度$L(p, \omega_{i})(radiance)$。
+
+​	通过对半球$\Omega$所有输入方向采样辐射度，可求得**一个输出方向**$\omega_{o}$的辐照度：
+
+<img src=".\pic\cg_reflection_equation_diffuse_irradiance.png" alt="cg_reflection_equation_diffuse_irradiance" style="zoom:100%;" />
+
+​	**半球朝向**决定了捕捉辐照度的位置，即决定了$\omega_{o}$。**预计算**每个可能朝向的辐照度，就能得到辐照度贴图。
+
+​	通过片段的表面法向量$N$，确定了片段所在半球的朝向。所以片段表面接收的环境光辐照度为：
+
+```glsl
+vec3 irradiance = texture(irradianceMap, N);
+```
+
+##### 2.2.1) 制作辐照度贴图伪代码
+
+​	在片段着色器中：
+
+```glsl
+#version 330 core
+out vec4 FragColor;
+in vec3 localPos;
+
+uniform samplerCube environmentMap;// .hdr转换得到的环境立方体贴图, 包含每个方向的radiance
+const float PI = 3.14159265359;
+void main() {           
+    vec3 normal = normalize(localPos);// localPos是Cube的顶点坐标 
+    vec3 irradiance = vec3(0.0);
+    [...] // convolution code
+    FragColor = vec4(irradiance, 1.0);// 输出每个方向的辐照度
+}
+```
+
+##### 2.2.2) 辐照度积分
 
 #### 2.3) 渲染漫反射辐照度
 

@@ -100,6 +100,10 @@ $N \cdot \vec{OA}=|N||\vec{OA}|cos\theta$
 - 若A在平面上(即OA和法线夹角等于90)，$ax+by+cz+d = 0$。
 - 若A在平面下方(即OA和法线夹角大于90)，$ax+by+cz+d < 0$。
 
+## 4 切向空间球面坐标→笛卡尔坐标
+
+<img src=".\pic\cg_spherical_2_cartesian_in_tangent_space.png" alt="cg_spherical_2_cartesian_in_tangent_space" style="zoom:100%;" />
+
 # 背景知识
 
 ## 1 HDR理论
@@ -1145,7 +1149,7 @@ for(int i = 0; i < steps; i++)
 
 ​	$f_{cook-torrance}=\frac{D(h)F(v,h)G(l,v,h)}{4(l\cdot n)(v \cdot n)}$。
 
-​	$D(h)$：法线分布函数(Normal Distribution Function)，描述微表面**正确朝向**的法线的分布概率。**正确朝向**指能够将来自 $l$ 的光反射到观察方向 $v$ 的法线方向。
+​	$D(h)$：法线分布函数(Normal Distribution Function)，描述微表面**正确朝向**的法线的**分布概率**。**正确朝向**指能够将来自 $l$ 的光反射到观察方向 $v$ 的法线方向。
 
 ​	$F(v, h)$：菲涅尔方程(Fresnel)，描述不同的表面角下**反射的光线的占比**。随着观察角度增大并接近掠射角(贴地角)，反射会逐渐增强。
 
@@ -1274,7 +1278,110 @@ void main() {
 
 ##### 2.2.2) 辐照度积分
 
+​	反射方程的积分是通过立体角$\omega$展开的，为了避免对立体角求积分，将立体角转换为球坐标$\theta$和$\phi$。
+
+<img src=".\pic\ibl_spherical_integrate.png" alt="ibl_spherical_integrate" style="zoom:67%;" />
+
+​	航向角$\phi$在$0-2\pi$之间，倾斜角$\theta$在$0-\frac{\pi}{2}$之间，积分方程变为如下：
+
+<img src=".\pic\cg_ibl_diffuse_irradiance_equation.png" alt="cg_ibl_diffuse_irradiance_equation" style="zoom:100%;" />
+
+​	其中，$sin(\theta)d\theta d\phi$等效于$d\omega_{i}$，$cos(\theta)$等效于$n\cdot \omega_{i}$。
+
+​	因此，可以在半球$\Omega$内，分别给每个球坐标轴指定离散样本$n_{1}$和$n_{2}$，求其**黎曼和**：
+
+<img src=".\pic\cg_ibl_riemann_sum.png" alt="cg_ibl_riemann_sum" style="zoom:100%;" />
+
+​	综上，求单个$\omega_{o}$的辐照度的代码如下，其中的坐标转换，可参考<a href="#4 切向空间球面坐标→笛卡尔坐标">切向空间中，球坐标转笛卡尔坐标</a>这里
+
+```glsl
+vec3 irradiance = vec3(0.0);  
+
+vec3 up    = vec3(0.0, 1.0, 0.0);
+vec3 right = cross(up, normal);// normal是坐标系的+z
+up         = cross(normal, right);
+
+float sampleDelta = 0.025;
+float nrSamples = 0.0; 
+for(float phi = 0.0; phi < 2.0 * PI; phi += sampleDelta)
+{
+    for(float theta = 0.0; theta < 0.5 * PI; theta += sampleDelta)
+    {
+        // spherical to cartesian (in tangent space)
+        vec3 tangentSample = vec3(sin(theta) * cos(phi),  
+                                  sin(theta) * sin(phi), 
+                                  cos(theta));
+        // tangent space to world
+        vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + 
+                         tangentSample.z * N; 
+
+        irradiance += texture(environmentMap, sampleVec).rgb * cos(theta) * sin(theta);
+        nrSamples++;
+    }
+}
+irradiance = PI * irradiance * (1.0 / float(nrSamples));
+```
+
 #### 2.3) 渲染漫反射辐照度
+
+```glsl
+// 使用菲涅耳公式来计算表面的间接反射率(未考虑粗糙度)
+vec3 kS = fresnelSchlick(max(dot(N, V), 0.0), F0);
+// 得出折射率或称漫反射率
+vec3 kD = 1.0 - kS;
+// 获取片段的辐照度
+vec3 irradiance = texture(irradianceMap, N).rgb;
+vec3 diffuse    = irradiance * albedo;
+vec3 ambient    = (kD * diffuse) * ao; 
+```
+
+​	考虑粗糙度，计算间接反射率：
+
+```glsl
+vec3 kS = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness); 
+vec3 kD = 1.0 - kS;
+vec3 irradiance = texture(irradianceMap, N).rgb;
+vec3 diffuse    = irradiance * albedo;
+vec3 ambient    = (kD * diffuse) * ao; 
+```
+
+### 3) 镜面反射IBL
+
+<img src=".\pic\cg_ibl_specular.png" alt="cg_ibl_specular" style="zoom:100%;" />
+
+​	镜面反射的积分，不仅取决于$\omega_{i}$，还取决于$\omega_{o}$，无法用两个方向向量采样预计算的立方体图。
+
+​	**Epic Games** 提出了**分割求和近似法**，其将预计算分成**两个单独的部分求解**，再将两部分组合起来得到预计算结果。
+
+#### 3.1) 分割求和近似法
+
+<img src=".\pic\cg_ibl_splite_specular.png" alt="cg_ibl_splite_specular" style="zoom:100%;"/>
+
+##### 3.1.1) 预滤波环境贴图(Pre-Filtered Environment Map)
+
+<img src=".\pic\cg_ibl_prefiler_env_map.png" alt="cg_ibl_prefiler_env_map" style="zoom:100%;" />
+
+​	卷积的第一部分被称为**预滤波环境贴图**，它类似于辐照度图，是预先计算的环境卷积贴图，但**考虑了粗糙度**。
+
+​	随着粗糙度的增加，参与环境贴图卷积的采样向量会**更分散**，导致反射更模糊，所以对于卷积的每个粗糙度级别，将按顺序把模糊后的结果存储在预滤波贴图的**mipmap**中，如下所示：
+
+<img src=".\pic\cg_ibl_prefiler_env_map_eg.png" alt="cg_ibl_prefiler_env_map_eg" style="zoom:60%;" />
+
+​	Cook-Torrance BRDF 的法线分布函数(NDF)将法线和视角方向作为输入。由于在卷积环境贴图时不知道视角方向，因此Epic Games假设视角方向——也是镜面反射方向——总是等于输出采样方向$\omega_{o}$，所以有如下：
+
+```glsl
+vec3 N = normalize(w_o);
+vec3 R = N;
+vec3 V = R;
+```
+
+​	这样，预过滤的环境卷积就不需要关心视角方向了。
+
+##### 3.1.2) BRDF积分贴图——镜面反射BRDF部分
+
+<img src=".\pic\cg_ibl_brdf_integral.png" alt="cg_ibl_brdf_integral" style="zoom:100%;" />
+
+
 
 # 纹理
 

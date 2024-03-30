@@ -1,3 +1,62 @@
+# 背景知识
+
+## 1 HDR理论
+
+### 1) 动态范围Dynamic Range
+
+​	动态范围(Dynamic Range，DR)是影像中**最亮的点**与**最暗的点**之间的比值，即从最亮点到最暗点所跨过的灰度等级。
+
+​	动态范围越高，表示色彩亮度层次越丰富，色彩空间越广阔。
+
+$Dynamic Range = Log_{10}(Max/Min)$
+
+- Max: 像素通道能表示的最大亮度强度，如 8bit 颜色通道能表示的最大亮度强度是 255。
+- Min：像素通道能表示的最小亮度强度，如 8bit 颜色通道表示的最小亮度强度是 1。
+
+​	8 bit 通道图像能容纳的动态范围约为：2.4。
+
+​	OpenEXR 图像格式能容纳的动态范围约为：12。
+
+​	人眼能够感知的动态范围为：9。
+
+### 2) LDR和HDR
+
+#### 2.1) LDR及有限的数据精度
+
+​	**LDR**(Low dynamic range)：计算机内常用的颜色是RGBA8888，即每个通道的亮度宽度为8bit，在GPU中会自动将**byte[0, 255]**转换成**float[0, 1]**。
+
+​	自然界的色彩亮度丰富，使用 [0, 1] 是完全不够的。
+
+​	当一张图片中亮度跨度过大，因为亮度精度的原因就会出现**亮度高的区域全部变成白色**，**亮度低的区域完全变成黑色的现象**。这是因为LDR的**数据描述精度很有限**造成的。
+
+#### 2.2) HDR
+
+​	将亮度跨度远远超出 [0, 1] 的数据称为HDR(Hight dynamic range)。
+
+​	HDR图像一般使用浮点像素格式来存储较高的动态范围。常用的HDR图像格式有：OpenEXR(.EXR)，Radiance RGBE(.HDR)，FloatTIFF(.TIF)。
+
+- Radiance RGBE(.hdr)格式介绍
+
+​	Radiance RGBE(.hdr)存储了一张完整的立方体贴图，这张环境贴图是从**球体投影到平面**上，从而可以轻松地将环境信息存储到一张等距柱状投影图中。
+
+​	立方体贴图所有六个面数据都是浮点数，允许指定 0.0 到 1.0 范围之外的颜色值。
+
+​	它并非直接存储每个通道的32位数据，而是每个通道存储**8位**，再以 alpha 通道存放指数。这样做确实会导致**精度损失**，但是非常有效率，但需要解析程序将每种颜色重新转换为它们的**浮点数等效值**。
+
+#### 2.3) VDR
+
+​	HDR到底多高才算High并没有一个统一的标准，比如 A 的HDR数据范围为[0, 32]，而B的HDR数据的范围为 [0, 64]，A与B都是HDR数据，但完全不一样，因此 VDR 的概念应运而生。
+
+### 3) 色调映射(Tone Mapping)
+
+​	因为HDR图像的亮度范围已经超出了[0, 1]这个范围，显示器无法正确的显示HDR图像的颜色。
+
+​	**因此需要将HDR图像数据映射到[0, 1]之间，这个过程就叫做色调映射。**
+
+​	色调映射算法的本质是：用一个函数，将**[0, n]**的HDR数据映射到**[0, 1]**，这个函数就是**色调映射的算法**。
+
+​	在游戏开发中色调映射算法有很多种，最简单的是 Reinhard tone mapping，最常用的有 Filmic tone mapping、ACES tone mapping。Tone mapping相关可参考[Tone mapping进化论 - 知乎](https://zhuanlan.zhihu.com/p/21983679?refer=highwaytographics)。
+
 # 数学基础
 
 ## 1 叉乘
@@ -139,65 +198,6 @@ $N \cdot \vec{OA}=|N||\vec{OA}|cos\theta$
 ​	既然镜面波瓣外的任何随机生成的样本与镜面积分无关，因此将**样本集中在镜面波瓣内**是有意义的，但代价是蒙特卡洛估算会产生偏差
 
 ​	本质上来说，这就是重要性采样的核心：只在某些区域生成采样向量，该区域围绕微表面**半向量**，受**粗糙度**限制。
-
-# 背景知识
-
-## 1 HDR理论
-
-### 1) 动态范围Dynamic Range
-
-​	动态范围(Dynamic Range，DR)是影像中**最亮的点**与**最暗的点**之间的比值，即从最亮点到最暗点所跨过的灰度等级。
-
-​	动态范围越高，表示色彩亮度层次越丰富，色彩空间越广阔。
-
-$Dynamic Range = Log_{10}(Max/Min)$
-
-- Max: 像素通道能表示的最大亮度强度，如 8bit 颜色通道能表示的最大亮度强度是 255。
-- Min：像素通道能表示的最小亮度强度，如 8bit 颜色通道表示的最小亮度强度是 1。
-
-​	8 bit 通道图像能容纳的动态范围约为：2.4。
-
-​	OpenEXR 图像格式能容纳的动态范围约为：12。
-
-​	人眼能够感知的动态范围为：9。
-
-### 2) LDR和HDR
-
-#### 2.1) LDR及有限的数据精度
-
-​	**LDR**(Low dynamic range)：计算机内常用的颜色是RGBA8888，即每个通道的亮度宽度为8bit，在GPU中会自动将**byte[0, 255]**转换成**float[0, 1]**。
-
-​	自然界的色彩亮度丰富，使用 [0, 1] 是完全不够的。
-
-​	当一张图片中亮度跨度过大，因为亮度精度的原因就会出现**亮度高的区域全部变成白色**，**亮度低的区域完全变成黑色的现象**。这是因为LDR的**数据描述精度很有限**造成的。
-
-#### 2.2) HDR
-
-​	将亮度跨度远远超出 [0, 1] 的数据称为HDR(Hight dynamic range)。
-
-​	HDR图像一般使用浮点像素格式来存储较高的动态范围。常用的HDR图像格式有：OpenEXR(.EXR)，Radiance RGBE(.HDR)，FloatTIFF(.TIF)。
-
-- Radiance RGBE(.hdr)格式介绍
-
-​	Radiance RGBE(.hdr)存储了一张完整的立方体贴图，这张环境贴图是从**球体投影到平面**上，从而可以轻松地将环境信息存储到一张等距柱状投影图中。
-
-​	立方体贴图所有六个面数据都是浮点数，允许指定 0.0 到 1.0 范围之外的颜色值。
-
-​	它并非直接存储每个通道的32位数据，而是每个通道存储**8位**，再以 alpha 通道存放指数。这样做确实会导致**精度损失**，但是非常有效率，但需要解析程序将每种颜色重新转换为它们的**浮点数等效值**。
-
-#### 2.3) VDR
-
-​	HDR到底多高才算High并没有一个统一的标准，比如 A 的HDR数据范围为[0, 32]，而B的HDR数据的范围为 [0, 64]，A与B都是HDR数据，但完全不一样，因此 VDR 的概念应运而生。
-
-### 3) 色调映射(Tone Mapping)
-
-​	因为HDR图像的亮度范围已经超出了[0, 1]这个范围，显示器无法正确的显示HDR图像的颜色。
-
-​	**因此需要将HDR图像数据映射到[0, 1]之间，这个过程就叫做色调映射。**
-
-​	色调映射算法的本质是：用一个函数，将**[0, n]**的HDR数据映射到**[0, 1]**，这个函数就是**色调映射的算法**。
-
-​	在游戏开发中色调映射算法有很多种，最简单的是 Reinhard tone mapping，最常用的有 Filmic tone mapping、ACES tone mapping。Tone mapping相关可参考[Tone mapping进化论 - 知乎](https://zhuanlan.zhihu.com/p/21983679?refer=highwaytographics)。
 
 # 图形基本算法
 
@@ -1387,25 +1387,33 @@ vec3 ambient    = (kD * diffuse) * ao;
 
 ​	镜面反射的积分，不仅取决于$\omega_{i}$，还取决于$\omega_{o}$，无法用两个方向向量采样预计算的立方体图。
 
-​	**Epic Games** 提出了**分割求和近似法**，其将预计算分成**两个单独的部分求解**，再将两部分组合起来得到预计算结果。
-
 #### 3.1) 分割求和近似法
 
 <img src=".\pic\cg_ibl_splite_specular.png" alt="cg_ibl_splite_specular" style="zoom:100%;"/>
+
+​	**Epic Games** 提出了**分割求和近似法**，其将预计算分成**两个单独的部分求解**，再将两部分组合起来得到预计算结果。
 
 #### 3.2) 预滤波环境贴图(Pre-Filtered Environment Map)
 
 ##### 3.2.1) 原理概述
 
+###### 1) 积分方程
+
 <img src=".\pic\cg_ibl_prefiler_env_map.png" alt="cg_ibl_prefiler_env_map" style="zoom:100%;" />
 
 ​	卷积的第一部分被称为**预滤波环境贴图**，它类似于辐照度图，是预先计算的环境卷积贴图，但**考虑了粗糙度**。
+
+###### 2) 粗糙度和mipmap
 
 ​	随着粗糙度的增加，参与环境贴图卷积的采样向量会**更分散**，导致反射更模糊，所以对于卷积的每个粗糙度级别，将按顺序把模糊后的结果存储在预滤波贴图的**mipmap**中，如下所示：
 
 <img src=".\pic\cg_ibl_prefiler_env_map_eg.png" alt="cg_ibl_prefiler_env_map_eg" style="zoom:60%;" />
 
-​	Cook-Torrance BRDF 的法线分布函数(NDF)将法线和视角方向作为输入。由于在卷积环境贴图时不知道视角方向，因此Epic Games假设视角方向——也是镜面反射方向——总是等于输出采样方向$\omega_{o}$，所以有如下：
+###### 3) 视线方向假设
+
+​	Cook-Torrance BRDF 的法线分布函数(NDF)将法线和视角方向作为输入。
+
+​	由于在卷积环境贴图时不知道视线方向，因此Epic Games假设**视线方向**(也是**镜面反射方向**)总是等于输出采样方向$\omega_{o}$，所以有如下：
 
 ```glsl
 vec3 N = normalize(w_o);
@@ -1413,33 +1421,211 @@ vec3 R = N;
 vec3 V = R;
 ```
 
-​	这样，预过滤的环境卷积就不需要关心视角方向了。但是从**掠射角**观察表面的镜面反射时，得到的掠角镜面反射效果不是很好，通常可以认为这是一个体面的妥协。
+​	这样，预过滤的环境卷积就不需要关心视线方向了。
 
-##### 3.2.2) 构建积分
+​	但是从**掠射角**观察表面的镜面反射时，得到的掠角镜面反射效果不是很好，通常认为这是一个体面的妥协。
 
-​	预滤波环境贴图和辐照度贴图的卷积相似，但是，也有些不同：
+###### 4) 反射波瓣
 
-① 对于不同**粗糙度等级**，需要把模糊结果存储在不同级别的**mipmap**中。
+​	辐照度贴图对半球进行均匀采样，但**均匀采样不适合**镜面反射效果，因为镜面反射依赖于表面粗糙度。
 
-② 辐照度贴图对半球进行均匀采样，但**均匀采样不适合**镜面反射效果，因为镜面反射依赖于表面粗糙度。反射光可能会比较松散，也可能会比较紧密，但一定围绕反射向量$r$，这就引入了**镜面波瓣**。
+​	因为粗糙度的影响，反射光可能会比较松散，也可能会比较紧密，但一定围绕反射向量$r$，这就引入了**镜面波瓣**。
 
 <img src=".\pic\cg_ibl_specular_lobe.png" alt="cg_ibl_specular_lobe" style="zoom:80%;" />
 
-​	随着粗糙度的增加，镜面波瓣的大小增加；随着入射光方向不同，形状会发生变化。因此，镜面波瓣高度依赖于材质。
+​	随着粗糙度的增加，镜面波瓣的大小增加；随着入射光方向不同，形状会发生变化。因此，镜面波瓣高度依赖于材质。大部分光线会被反射到波瓣内，其余方向会被浪费掉，因此涉及到**重要性采样**。蒙特卡洛积分和重要性采样参考<a href="#5 蒙特卡洛积分">蒙特卡洛积分</a>小节。
 
-​	大部分光线会被反射到波瓣内，其余方向会被浪费掉，因此涉及到**重要性采样**。
+###### 5) 低差异序列
 
-​	蒙特卡洛积分和重要性采样参考<a href="#5 蒙特卡洛积分">蒙特卡洛积分</a>小节。
+<img src=".\pic\cg_discrepancy_oder.png" alt="cg_discrepancy_oder" style="zoom:50%;" />
 
-#### 3.3) BRDF积分贴图——镜面反射BRDF部分
+​	低差异序列在高维空间中的分布更加均匀，且还有许多利于渲染程序的性质。
+
+​	上图中，左边是伪随机数组成的二维点集，右边是低差异序列组成的二维点集，可以看到低差异序列对**整个空间覆盖更加完整**，表现了其分布的均匀性。
+
+​	Hammersley序列是一种低差异序列，该序列是把十进制数字的二进制表示镜像翻转到小数点右边而得。
+
+​	在着色器中，可以获得Hammersley序列：
+
+```glsl
+vec2 Hammersley(uint i, uint N)
+{
+    return vec2(float(i)/float(N), RadicalInverse_VdC(i));
+} 
+// -------------------------------------------------------
+float RadicalInverse_VdC(uint bits) 
+{
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10; // / 0x100000000
+}
+```
+
+##### 3.2.2) GGX重要性采样
+
+​	有别于均匀或纯随机地在积分半球 $\Omega$产生采样向量，重要性采样会根据**粗糙度**，偏向微表面的半向量的宏观反射方向。采样过程如下：
+
+① 开始一个大循环，生成一个随机序列值：
+
+```glsl
+const uint SAMPLE_COUNT = 4096u;
+for(uint i = 0u; i < SAMPLE_COUNT; ++i)
+{
+    vec2 Xi = Hammersley(i, SAMPLE_COUNT);// Xi的两个分类属于[0, 1]之间  
+}
+```
+
+② 用该序列值在切线空间中生成样本向量，并转换到世界空间：
+
+```glsl
+vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
+{
+    // Epic Games使用了平方粗糙度以获得更好的视觉效果
+    float a = roughness * roughness;
+	// 用产生的随机序列Xi构建切向空间的球面坐标位置: phi方位角, theta倾斜角
+    float phi = 2.0 * PI * Xi.x; 
+    float cosTheta = sqrt((1.0 - Xi.y) / (1.0 + (a * a - 1.0) * Xi.y));
+    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+
+    // 切线空间的球坐标转换到笛卡尔坐标, 可参考[数学基础]/[4 切向空间球面坐标→笛卡尔坐标]
+    vec3 H;
+    H.x = cos(phi) * sinTheta;
+    H.y = sin(phi) * sinTheta;
+    H.z = cosTheta;
+
+    // 构建切向空间的三轴坐标, 用于坐标转换. 
+    // N:axis-z, tangent:axis-right, bitangent:axis-up
+    vec3 up        = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);    
+    vec3 tangent   = normalize(cross(up, N));
+    vec3 bitangent = cross(N, tangent);
+	// 坐标转换, 将随机序列转换到世界空间
+    vec3 sampleVec = tangent * H.x + bitangent * H.y + N * H.z;
+    return normalize(sampleVec);
+}
+```
+
+③ 使用样本向量对场景的辐射度采样。
+
+```glsl
+#version 330 core
+out vec4 FragColor;
+in vec3 localPos;
+
+uniform samplerCube environmentMap;
+// 根据不同mipmap等级, roughness不同
+// 初始等级为0, mip数值越大, 等级越低, 越模糊
+uniform float roughness;
+
+const float PI = 3.14159265359;
+
+float RadicalInverse_VdC(uint bits);
+vec2 Hammersley(uint i, uint N);
+vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness);
+
+void main()
+{       
+    // 假设视角方向总是等于输出采样方向, 也就是镜面反射方向
+    vec3 N = normalize(localPos);    
+    vec3 R = N;
+    vec3 V = R;
+
+    const uint SAMPLE_COUNT = 1024u;
+    float totalWeight = 0.0;   
+    vec3 prefilteredColor = vec3(0.0); 
+    
+    for(uint i = 0u; i < SAMPLE_COUNT; ++i)
+    {
+        vec2 Xi = Hammersley(i, SAMPLE_COUNT);//生成随机序列
+        vec3 H  = ImportanceSampleGGX(Xi, N, roughness);//通过随机序列生成半向量
+        vec3 L  = normalize(2.0 * dot(V, H) * H - V);//根据半向量和视角方向, 反算入射光向量
+
+        float NdotL = max(dot(N, L), 0.0);
+        if(NdotL > 0.0)
+        {
+            prefilteredColor += texture(environmentMap, L).rgb * NdotL;
+            totalWeight      += NdotL;
+        }
+    }
+    // 对最终结果影响较小(NdotL较小)的采样最终权重也较小
+    prefilteredColor = prefilteredColor / totalWeight;
+    FragColor = vec4(prefilteredColor, 1.0);
+}
+```
+
+#### 3.3) BRDF积分贴图
+
+##### 3.3.1) 原理概述
 
 <img src=".\pic\cg_ibl_brdf_integral.png" alt="cg_ibl_brdf_integral" style="zoom:100%;" align="left" />，其中<img src=".\pic\cg_ibl_brdf_integral_part.png" alt="cg_ibl_brdf_integral" style="zoom:100%;"/>
 
-​	假设每个方向的入射辐射度都是白色的($L(p,x) = 1$)，就可在给定粗糙度、光线$\omega_{i}$、法线$n$的情况下，预计算BRDF的结果，生成的贴图被称作BRDF积分贴图。
+​	这部分等同于在纯白的环境光或者辐射度恒定为$L_{i}=1.0$的设置下，在$n\cdot \omega_{o}$、表面粗糙度、菲涅尔系数$F_{0}$上计算镜面BRDF求积分。	
 
-​	Epic Games将预计算好的BRDF对每个**粗糙度和入射角的组合**的响应结果存储在一张 2D 查找纹理(LUT)上，以BRDF的输入$n\cdot \omega_{i}$作为横坐标，以粗糙度作为纵坐标。
+​	对3个变量做卷积有点复杂，不过可以把$F_{0}$移出镜面BRDF方程，推导过程忽略，得到最终方程为：
 
-​	纹理中存储的是菲涅耳响应的系数(R 通道)和偏差值(G 通道)。
+<img src=".\pic\cg_ibl_brdf_final_equation.png" alt="cg_ibl_brdf_final_equation" style="zoom:100%;" />
+
+​	Epic Games将预计算好的BRDF对每个**粗糙度和入射角的组合**的响应结果存储在一张 2D 查找纹理(LUT)上。
+
+​	以BRDF的输入$n\cdot \omega_{i}$作为横坐标，以粗糙度作为纵坐标，并将卷积结果存储在纹理中：菲涅耳响应的系数(R 通道)和偏差值(G 通道)。
+
+##### 3.3.2) 卷积计算
+
+```glsl
+void main() 
+{
+    vec2 integratedBRDF = IntegrateBRDF(TexCoords.x, TexCoords.y);
+    FragColor = integratedBRDF;
+}
+// ----------------------------------------------------------------------------
+vec2 IntegrateBRDF(float NdotV, float roughness)
+{
+    vec3 V;
+    V.x = sqrt(1.0 - NdotV * NdotV);
+    V.y = 0.0;
+    V.z = NdotV;
+
+    float A = 0.0;
+    float B = 0.0;
+
+    vec3 N = vec3(0.0, 0.0, 1.0);
+
+    const uint SAMPLE_COUNT = 1024u;
+    for(uint i = 0u; i < SAMPLE_COUNT; ++i)
+    {
+        vec2 Xi = Hammersley(i, SAMPLE_COUNT);
+        vec3 H  = ImportanceSampleGGX(Xi, N, roughness);
+        vec3 L  = normalize(2.0 * dot(V, H) * H - V);
+
+        float NdotL = max(L.z, 0.0);
+        float NdotH = max(H.z, 0.0);
+        float VdotH = max(dot(V, H), 0.0);
+
+        if(NdotL > 0.0)
+        {
+            float G = GeometrySmith(N, V, L, roughness);
+            float G_Vis = (G * VdotH) / (NdotH * NdotV);
+            float Fc = pow(1.0 - VdotH, 5.0);
+
+            A += (1.0 - Fc) * G_Vis;
+            B += Fc * G_Vis;
+        }
+    }
+    A /= float(SAMPLE_COUNT);
+    B /= float(SAMPLE_COUNT);
+    return vec2(A, B);
+}
+```
+
+## 6 反射探针
+
+​	反射探针像一个捕捉周围各个方向的球形视图的**摄像机**。将捕捉的图像将存储为cubemap，提供给具有反射材质的对象使用。
+
+# 后处理技术
+
+## 1 LUT
 
 # 纹理
 

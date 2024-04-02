@@ -1627,6 +1627,83 @@ vec2 IntegrateBRDF(float NdotV, float roughness)
 
 ## 1 LUT
 
+​	本小节参考自：[【OpenGL学习】3DLUT颜色滤镜](https://blog.csdn.net/katherine_qj/article/details/112666379)。
+
+​	LUT(Look Up Table)指的是颜色查找表，是色彩映射关系的管理。
+
+​	例如：$rgb(0.2,0.3,0.4) = colorMatrix[0.2, 0.3, 0.4] = rgb(0.4, 0.5, 0.6)$
+
+​	colorMatrix实际是一种颜色映射关系，把提前定义好的对应关系存储在一张图中，这个图就叫做LUT。
+
+### 1) LUT优缺点
+
+- 优势
+
+​	RGB的颜色模式可以表示的颜色数量为256X256X256，如果要完全记录这种映射关系，需要大量的**内存**，并且在**计算时工作量巨大**。
+
+​	为了简化计算量，降低内存占用，3D LUT以一定的**采样间隔**，将相近的n种颜色采用一条映射记录并存储。
+
+​	采样步长n通常取4，这样只需要64 X 64 X 64种就可以表示256x256x256的内容。从而降低了存储映射关系所用的内存空间，充分利用GPU的计算能力。
+
+- 缺点
+
+​	LUT是以图像资源的方式存在，而且必须无压缩，因为也会占用内存空间，随着LUT数量的增多，会增加软件包体积的大小。
+
+​	LUT资源容易被破解，泄密。
+
+### 2) LUT空间划分
+
+​	以64x64x64的LUT为例。图在横、竖方向上被划分为8*8共64个方格，每个方格内的Blue分量为定值，64个方格代表B分量的64种映射。
+
+​	如下图所示，对于每个方格，B分量从左至右、从上至下从0增长至63。
+
+<img src=".\pic\cg_lut_b_comp.jpg" alt="cg_lut_b_comp" style="zoom:60%;" />
+
+​	每个方格内部又被分为**64x64**，横坐标代表R的64种分量，纵坐标代表G的64种分量：
+
+<img src=".\pic\cg_lut_rg_comp.jpg" alt="cg_lut_rg_comp" style="zoom:60%;" />
+
+### 3) LUT采样
+
+​	用一段着色器脚本来解释LUT的采样：
+
+```glsl
+//采样原始纹理的像素值
+vec4 textureColor =texture2D(uTexture, vTextureCoord);
+//采样出的像素值在[0, 1]中, 将b分量转换为[0, 63]的浮点数
+float blueColor = textureColor.b * 63.0;
+
+//确定R、G对应的小方格索引,
+//由于存在浮点误差, 所以要取两个B分量，从而得到两个R、G分量: quad1和quad2
+vec2 quad1; // floor()向下取整
+quad1.y = floor(floor(blueColor) / 8.0);      // G分量方格索引
+quad1.x = floor(blueColor) - (quad1.y * 8.0); // R分量方格索引
+
+vec2 quad2;// ceil()向上取整
+quad2.y = floor(ceil(blueColor) / 7.9999);
+quad2.x = ceil(blueColor) - (quad2.y * 8.0);
+
+float quadLen = 1.0 / 8.0;    //0.125
+float resolution = 8 * 8 * 8; //512, 单边像素分辨率
+vec2 texPos1, texPos2; 
+// 1) quad1.x * quadLen找到对应方块最左侧的横坐标
+// 2) (64-1) * textureColor.r将原始像素转换到[0, 63],得到value
+// 3) value除以64进行归一化, 然后((value/64) / 8)即得到当前点在小方格中的位置
+// 4) 1)和3)相加即得到当前像素在小方格中的坐标
+// 5) 最后加上0.5 / 512, 即把点放到64x64小方格的中心
+texPos1.x = (quad1.x * quadLen) + ((64-1) * textureColor.r) / (64.0 * 8.0) + 0.5 / 512;
+texPos1.y = (quad1.y * quadLen) + ((64-1) * textureColor.g) / (64.0 * 8.0) + 0.5 / 512;
+
+texPos2.x = (quad2.x * quadLen) + ((64-1) * textureColor.r) / (64.0 * 8.0) + 0.5 / 512;
+texPos2.y = (quad2.y * quadLen) + ((64-1) * textureColor.g) / (64.0 * 8.0) + 0.5 / 512;
+
+//采样LUT
+vec4 newColor1 = texture2D(s_LutTexture, texPos1);
+vec4 newColor2 = texture2D(s_LutTexture, texPos2);
+//得到转换后的像素值
+vec4 newColor = mix(newColor1, newColor2, fract(blueColor)); 
+```
+
 # 纹理
 
 ## 1 纹理环绕

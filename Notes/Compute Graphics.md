@@ -1090,19 +1090,11 @@ for(int i = 0; i < steps; i++)
 
 ## 4 BRDF
 
-### 1) Disney Principled BRDF 核心理念
+### 1) Disney Principled BRDF 
 
-​	**着色模型是艺术导向（Art Directable）的，而不一定要是完全物理正确（physically correct）**，能让美术同学用非常直观的少量参数，以及非常标准化的工作流，快速实现涉及大量不同材质的真实感的渲染工作。
+​	迪士尼BRDF核心理念：**着色模型是艺术导向（Art Directable）的，而不一定要是完全物理正确（physically correct）**，能让美术同学用非常直观的少量参数，以及非常标准化的工作流，快速实现涉及大量不同材质的真实感的渲染工作。
 
-​	核心理念如下：
-
-1. 应使用直观的参数，而不是物理类的晦涩参数。
-2. 参数应尽可能少。
-3. 参数在其合理范围内应该为0到1。
-4. 允许参数在有意义时超出正常的合理范围。
-5. 所有参数组合应尽可能健壮和合理。
-
-### 2) Disney Principled BRDF 参数
+​	其参数如下：
 
 - **baseColor（基础色）**：表面颜色，通常由纹理贴图提供。
 
@@ -1117,7 +1109,7 @@ for(int i = 0; i < steps; i++)
 - **clearcoat（清漆强度）**：有特殊用途的第二个镜面波瓣（specular lobe）。
 - **clearcoatGloss（清漆光泽度）**：控制透明涂层光泽度，0 =“缎面（satin）”外观，1 =“光泽（gloss）”外观。
 
-### 3) BRDF的几何意义
+### 2) BRDF的几何意义
 
 ​	BRDF(Bidirectional Reflectance Distribution Function)：双向反射分布函数，描述物体表面**如何反射光线**的方程。
 
@@ -1127,13 +1119,15 @@ for(int i = 0; i < steps; i++)
 
 ​	若表面是**完美光滑**的，那么与$\omega_{i}$对称的出射角度的BRDF应该为1，其余角度的BRDF为0。
 
-### 4) 最广泛使用的模型：Cook-Torrance BRDF
+### 3) Cook-Torrance BRDF
 
 ​	Microfacet Cook-Torrance BRDF是实践中**使用最广泛**的模型，实际上也是人们可以想到的**最简单**的微平面模型。
 
 ​	它仅对几何光学系统中的单层微表面上的单个散射进行建模，**没有考虑多次散射**，**分层材质**，以及**衍射**。
 
-<img src=".\pic\cg_pbr_cook_torrance_brdf.png" alt="cg_pbr_cook_torrance_brdf" style="zoom:100%;" />
+<img src=".\pic\cg_pbr_cook_torrance_brdf.png" alt="cg_pbr_cook_torrance_brdf" style="zoom:100%;" align="left"/>
+
+$f_{cook-torrance}=\frac{D(h)F(v,h)G(l,v,h)}{4(l\cdot n)(v \cdot n)}$ 
 
 #### 4.1) 折射光、反射光比例
 
@@ -1151,45 +1145,63 @@ for(int i = 0; i < steps; i++)
 
 #### 4.3) 高光模型
 
-##### 4.3.1) 正确的法线方向	
+##### 4.3.1) 前置知识
+
+###### (1) 正确的法线方向	
 
 ​	每个表面点将来自给定进入方向的光反射到单个出射方向，该出射方向取决于微观几何法线（microgeometry normal）**m** 的方向。
 
-​	在计算BRDF项时，指定光方向 **l(或$\omega_{i}$)** 和视图方向 **v(或$\omega_{o}$)** 。这意味着，对于所有小平面，只有可以**将 l 反射到 v 的那些小平面**，才有助于BRDF。其他方向有正有负，积分之后，相互抵消。
-
-​	这些有助于BRDF的小平面法线，就是**有效的/正确的**法线方向。
+​	在计算BRDF项时，指定光方向 **l(或$\omega_{i}$)** 和视图方向 **v(或$\omega_{o}$)** 。这意味着，对于所有小平面，只有可以**将 l 反射到 v 的那些小平面**，才有助于BRDF。其他方向有正有负，积分之后，相互抵消。这些有助于BRDF的小平面法线，就是**有效的/正确的**法线方向。
 
 ​	如下图所示，正确的 $m$ 正好位于 $l$ 和 $v$ 的中间，只有当 $m = h$ 时，表面的点才会把 $l$ 反射到 $v$ 上，其他点对BRDF没有贡献。
 
-<img src=".\pic\cg_pbr_brdf_normal.png" alt="cg_pbr_brdf_normal" style="zoom:80%;" />
+<img src=".\pic\cg_pbr_brdf_normal.png" alt="cg_pbr_brdf_normal" style="zoom:60%;" />
 
-##### 4.3.2) 被遮蔽的光
+###### (2) 被遮蔽的光
 
 ​	不是所有能被反射到 $v$ 的光都会对BRDF做贡献。这些光的一部分可能会因为 $l$ 方向或 $v$ 方向的遮挡，从镜面反射中抹除。
 
-<img src=".\pic\cg_pbr_brdf_shadow.png" alt="cg_pbr_brdf_shadow" style="zoom:75%;" />
+<img src=".\pic\cg_pbr_brdf_shadow.png" alt="cg_pbr_brdf_shadow" style="zoom:65%;" />
 
 <center> l方向的遮挡——阴影</center>
 
-<img src=".\pic\cg_pbr_brdf_mask.png" alt="cg_pbr_brdf_mask" style="zoom:75%;" />
+<img src=".\pic\cg_pbr_brdf_mask.png" alt="cg_pbr_brdf_mask" style="zoom:65%;" />
 
 <center> v方向的遮挡——掩蔽</center>
 
 ​	在阴影区没有接收 $l$ 的直射光，但它接受了其他表面区域的反射光。但microfacet理论忽略了这些相互反射。
 
-<img src=".\pic\cg_pbr_brdf_interact_reflection.png" alt="cg_pbr_brdf_interact_reflection" style="zoom:75%;" />
+<img src=".\pic\cg_pbr_brdf_interact_reflection.png" alt="cg_pbr_brdf_interact_reflection" style="zoom:65%;" />
 
 <center>忽略了其他表面的相互反射</center>
 
-##### 4.3.3) 公式解读
+##### 4.3.2) 菲涅尔方程: $F(v, h, F_{0})$
 
-​	$f_{cook-torrance}=\frac{D(h)F(v,h)G(l,v,h)}{4(l\cdot n)(v \cdot n)}$。
+###### (1) 菲涅尔效应
 
-​	$D(h)$：法线分布函数(Normal Distribution Function)，描述微表面**正确朝向**的法线的**分布概率**。**正确朝向**指能够将来自 $l$ 的光反射到观察方向 $v$ 的法线方向。
+​	**视线**垂直物体表面时，反射弱，只表现了**最基本**的反射特性：基础反射率$F_{0}$**(Base Reflectivity)**。
 
-​	$F(v, h)$：菲涅尔方程(Fresnel)，描述不同的表面角下**反射的光线的占比**。随着观察角度增大并接近掠射角(贴地角)，反射会逐渐增强。
+​	视线非垂直时，**夹角**(与物体所在平面)越小，反射越明显。故，视线越小(与水平面夹角，观察角度越大(与法线夹角))，反射会逐渐增强。
 
-​	$G(l, v, h)$：几何函数，描述微平面自成阴影的属性，即当m = h时，未被遮蔽的表面点的百分比。
+​	由下图所示，**反射越弱的地方，越模糊**。
+
+<img src=".\pic\cg_fresnel_effect.jpg" alt="cg_fresnel_effect" style="zoom:45%;" />
+
+<img src=".\pic\cg_fresnel_effect_2.jpg" alt="cg_fresnel_effect_2" style="zoom:50%;" />
+
+###### (2) 方程几何意义
+
+​	菲涅尔方程描述的是**被反射的光线**所占的百分比(包含反射、折射)，这个比率会随着**观察的角度**不同而不同。
+
+​	利用该反射比率和**能量守恒原则**，可以得出光线被折射的部分以及光线剩余的能量。
+
+##### 4.3.3) 法线分布函数: $D(h)$
+
+​	描述微表面**正确朝向**的法线的**分布概率**。**正确朝向**指能够将来自 $l$ 的光反射到观察方向 $v$ 的法线方向。
+
+##### 4.3.4) 几何函数: $G(l, v, h)$
+
+​	描述微平面自成阴影的属性，即当m = h时，未被遮蔽的表面点的百分比。
 
 ​	分母$4(l\cdot n)(v \cdot n)$：校正因子（correctionfactor），作为微观几何的局部空间和整个宏观表面的局部空间之间变换的微平面量的校正。
 

@@ -1919,3 +1919,123 @@ g++ -o main main.cc bar2.cc bar1.cc -fno-gnu-unique # ok
 ​	读取数组数据时，连续的数组成员会被加载到同一个缓存行中，因此不需要多次读取。
 
 ​	读取链表时，由于链表元素的地址是离散的，因此在处理多个元素时，可能需要**加载多个缓存行**。
+
+## 3 空间配置器
+
+​	allocator是STL的重要组成，一般用户不怎么熟悉它，因为allocator隐藏在所有容器身后，默默**完成内存配置与释放，对象构造和析构的工作**。
+
+<img src=".\pic\c++_allocator.png" alt="c++_allocator" style="zoom:80%;" />
+
+​	上图中，左边是用户代码，右边是STL内部实现。
+
+​	vector的模板参数class T被替换为int，同时第二个模板参数因为没有指定，所以为**默认模板参数**，即`allocator<int>`。
+
+​	SGI STL 实现了两个allocator：一个是标准的std::allocator，另一个是特殊的std::alloc。
+
+### 1) 符合STL接口的自定义空间分配器
+
+```c++
+#include <new>
+#include <cstddef>
+#include <cstdlib>
+#include <climits>
+#include <iostream>
+
+namespace my_alloc
+{
+    // allocate的实际实现，简单封装new，当无法获得内存时，报错并退出
+    template <class T>
+    inline T* _allocate(ptrdiff_t size, T*) {
+        set_new_handler(0);
+        T* tmp = (T*)(::operator new((size_t)(size * sizeof(T))));
+        if (tmp == 0) {
+            cerr << "out of memory" << endl;
+            exit(1);
+        }
+        return tmp;
+    }
+
+    // deallocate的实际实现，简单封装delete
+    template <class T>
+    inline void _deallocate(T* buffer) { ::operator delete(buffer); }
+
+    // construct的实际实现，placement new在分配的内存上调用对象的构造函数
+    template <class T1, class T2>
+    inline void _construct(T1* p, const T2& value) { new(p) T1(value); }
+
+    // destroy的实际实现，直接调用对象的析构函数
+    template <class T>
+    inline void _destroy(T* ptr) { ptr->~T(); }
+
+    template <class T>
+    class allocator {
+    public:
+        typedef T           value_type;
+        typedef T*          pointer;
+        typedef const T*    const_pointer;
+        typedef T&          reference;
+        typedef const T&    const_reference;
+        typedef size_t      size_type;
+        typedef ptrdiff_t   difference_type;
+
+        // 构造函数
+        allocator() {}
+        
+        template <class U>
+        allocator(const allocator<U>& c){}
+
+        // rebind allocator of type U
+        template <class U>
+        struct rebind { typedef allocator<U> other; };
+
+        // allocate，deallocate，construct和destroy函数均调用上面的实际实现
+        // hint used for locality. ref.[Austern],p189
+        pointer allocate(size_type n, const void* hint = 0) 
+        {
+            return _allocate((difference_type)n, (pointer)0);
+        }
+        void deallocate(pointer p, size_type n) { _deallocate(p); }
+        void construct(pointer p, const T& value) { _construct(p, value); }
+        void destroy(pointer p) { _destroy(p); }
+
+        pointer address(reference x) { return (pointer)&x; }
+        const_pointer const_address(const_reference x) { return (const_pointer)&x; }
+
+        size_type max_size() const { return size_type(UINT_MAX / sizeof(T)); }   
+    };
+} // end of namespace myalloc
+```
+
+​	现在，可以使用自己编写的allocator来为vector分配空间：
+
+```c++
+std::vector<int, my_alloc::allocator<int> > v;
+```
+
+### 2) SGI STL 标准配置器(std::allocator)
+
+​	这个allocator部分符合STL标准，它在文件 defalloc.h 中实现。
+
+​	但是SGI STL的容器并不使用它，它存在的意义仅在于为用户提供一个兼容老代码的折衷方法，其实现仅仅是对**new和delete的简单包装**。这里我们不再深究。
+
+### 3) SGI STL 特殊配置器(std::alloc)
+
+​	这个配置器是SGI STL的默认配置器，它在`<memory>`中实现。
+
+<img src=".\pic\c++_alloc.png" alt="c++_alloc" style="zoom:95%;" />
+
+​	std::alloc接口如下：
+
+- `static T* allocate()`函数负责空间配置，返回一个T对象大小的空间。
+- `static T* allocate(size_t)`函数负责批量空间配置。
+- `static void deallocate(T*)`函数负责空间释放。
+- `static void deallocate(T*,size_t)`函数负责批量空间释放。
+
+​	其中还有两级配置器，上面的接口根据情况调用这两个配置器。
+
+​	第二级配置器实现了**内存池**和**自由链表**，当程序多次进行小空间的配置时，可以从内存池和自由链表中获取空间，减少系统调用，提升性能。
+
+​	当进行大空间的配置时，接口直接调用第一级配置器。
+
+​	最终，它们都是用`malloc()`和`free()`来配置和释放空间。
+

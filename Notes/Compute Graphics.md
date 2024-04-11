@@ -2269,9 +2269,11 @@ shadow /= 9.0;
 
 <img src=".\pic\cg_partition_frustum.png" alt="cg_partition_frustum" style="zoom:60%;" />
 
-## 4 点光源CubeMap
+## 4 点光源阴影贴图
 
-### 1) 写入深度图
+### 1) CubeMap(万向阴影贴图)
+
+#### 1.1) 写入深度图
 
 - 顶点着色器：将mesh转换到世界空间中，作为几何着色器的输入；
 
@@ -2281,7 +2283,7 @@ shadow /= 9.0;
 
 - 片元着色器：光栅化上述不同光照空间的图元后，片元着色器中根据几何着色器传入的world position和常量光源位置，计算距离，写入不同面的深度缓冲。
 
-### 2) CubeMap采样
+#### 1.2) CubeMap采样
 
 ```glsl
 vec3 sampleVec = fragPos - lightPos; 
@@ -2291,6 +2293,33 @@ float closestDepth = texture(depthMap, sampleVec).r;
 ​	上述用于采样的向量是以光源为坐标原点的方向向量；
 
 ​	深度缓冲是以光源为中心写入的，因此可以采样到包围光源所有方向的深度值。
+
+#### 1.3) 多个点光源
+
+##### 1.3.1) 阴影贴图
+
+​	使用**CubeMapArray**作为阴影贴图。
+
+​	结合几何着色器，一个mesh使用一个drawcall，就可更新所有点光源的阴影贴图。
+
+##### 1.3.2) 着色
+
+​	在延迟渲染中，使用for循环遍历所有点光源，叠加点光源的光照效果。
+
+​	通过每个点光源的索引，在CubeMapArray找到对应的阴影贴图，绘制阴影。
+
+##### 1.3.3) 优化
+
+- 不是每帧都需要更新阴影贴图，如场景是禁止的时候。
+- 引擎中，每个光源都有CastShadow属性。若一个光源不CastShadow，那么它就不需要更新阴影贴图，也不需要在着色时参与阴影计算。
+
+### 2) 双抛物面环境映射
+
+​	参考这里[详解双抛物面环境映射](https://zhuanlan.zhihu.com/p/40784734)。
+
+## 5 阴影贴图图集(Shadow Map Atlas)
+
+​	参考这里[DOOM (2016) - Graphics Study](https://www.adriancourreges.com/blog/2016/09/09/doom-2016-graphics-study/)。
 
 # 骨骼动画
 
@@ -2305,6 +2334,8 @@ float closestDepth = texture(depthMap, sampleVec).r;
 - Global Transform(全局变换)：在最简单的情况下，已知一个关节的局部变换，**连乘**它的所有父骨骼的局部变换矩阵，就能得到该关节的**全局变换矩阵|组合变换矩阵**(Global Transform)。**根节点的父节点处于模型空间中**。
 
 - Mesh Transform(蒙皮变换矩阵)：Mesh Transform = Global Transform x OffsetMatrix。顶点应用了蒙皮矩阵后，就确定了其在绑定空间下的最终位置。
+
+​	原理参考：[浅谈骨骼动画技术原理（四）：蒙皮与其他技术](https://zhuanlan.zhihu.com/p/437704863)。
 
 # 渲染性能
 

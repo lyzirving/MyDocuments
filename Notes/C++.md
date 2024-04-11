@@ -1845,11 +1845,21 @@ g++ -o main main.cc bar2.cc bar1.cc -fno-gnu-unique # ok
 
 ## 2 vector
 
-​	vector采用的数据结构是**线性的连续空间**(泛型的动态类型顺序表)；
+​	vector是**线性的连续空间**，底层存储是一个**数组**，可变大小的数组，支持随机访问 O(1) 。
 
-​	其以两个迭代器start和finish分别指向配置得来的连续空间中目前**已经被使用的空间**；
+​	在**尾部位置**插入/删除是O(1)，在其他位置插入/删除 O(N)。
 
-​	迭代器end_of_storage指向整个连续空间的尾部。
+```c++
+struct _Vector_impl : public _Tp_alloc_type {
+	pointer 	_M_start;
+	pointer 	_M_finish;
+	pointer		_M_end_of_storage;
+};
+```
+
+​	`start` 和 `finish` 之间是已经被使用的空间范围，即 `vector.size()` 的大小。
+
+​	`start` 和 `end_of_stroage` 之间是vector底层数组的整个空间，即 `vector.capacity()` 的大小。
 
 ### 1) vector扩容&迭代器问题
 
@@ -2022,6 +2032,8 @@ std::vector<int, my_alloc::allocator<int> > v;
 
 ​	这个配置器是SGI STL的默认配置器，它在`<memory>`中实现。
 
+​	其**主要作用**是为了解决内存的申请和释放时引入的**内存碎片**问题，SGI使用的方法是 “双层级配置器”。
+
 <img src=".\pic\c++_alloc.png" alt="c++_alloc" style="zoom:95%;" />
 
 ​	std::alloc接口如下：
@@ -2031,11 +2043,39 @@ std::vector<int, my_alloc::allocator<int> > v;
 - `static void deallocate(T*)`函数负责空间释放。
 - `static void deallocate(T*,size_t)`函数负责批量空间释放。
 
-​	其中还有两级配置器，上面的接口根据情况调用这两个配置器。
+​	当配置区块**大于128 bytes**时，调用第一级配置器。第一级直接调用 malloc()、deallocate()、free()等系统调用分配内存。
 
-​	第二级配置器实现了**内存池**和**自由链表**，当程序多次进行小空间的配置时，可以从内存池和自由链表中获取空间，减少系统调用，提升性能。
-
-​	当进行大空间的配置时，接口直接调用第一级配置器。
+​	当配置区块**小于128 bytes**时，调用第二级配置器。第二级配置器实现了**内存池**和**自由链表**：配置维护16个自由链表，负责16种小型区块的配置能力。当程序多次进行小空间的配置时，可以从内存池和自由链表中获取空间，减少系统调用，提升性能。
 
 ​	最终，它们都是用`malloc()`和`free()`来配置和释放空间。
+
+## 4 list
+
+## 5 deque
+
+​	双端队列，它维护了**两级**的连续空间。第一级由**数组**组成，维护各段等长连续空间的**地址**；第二级是各段连续空间，存放实际的数据。
+
+### 1) 底层实现
+
+​	deque 容器需要维护 map 数组、start、finish 迭代器，如下图所示：
+
+<img src=".\pic\c++_deque.png" alt="c++_deque" style="zoom:65%;" />
+
+​	start迭代器记录着map数组中首个连续空间的起始(first)/结束(last)地址，以及第一个对象的位置(cur)；
+
+​	finish迭代器记录着map数组中最后一个连续空间的的起始(first)/结束(last)地址，以及end的位置(cur)。
+
+​	综上，可以在不同内存段中遍历，并快速定位首/尾节点。
+
+### 2) 优缺点
+
+​	deque支持**随机访问**O(1)：要根据访问偏移量的大小和内存段的大小，判断是否跳转到下个内存段。
+
+​	deque支持高效的**头部和尾部**插入/删除操作O(1)。
+
+​	在功能上，deque合并了vector和list，但占用更多的**内存**。
+
+
+
+
 

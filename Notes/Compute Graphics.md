@@ -347,7 +347,17 @@ bool Ray::intersects(const AABB& aabb) const
 
 <img src=".\pic\cg_Ray-AABB_intersection.png" alt="cg_Ray-AABB_intersection" style="zoom:80%;" />
 
-## 5 判断任意点在凸多边形内部/外部
+## 5 射线和平面求交
+
+​	若射线与平面有共同的点，那么可以将射线公式代入平面公式求得该点到射线起点的距离t：
+$(O+\overrightarrow{D}t)\cdot\overrightarrow{n}+d=0$，即：
+$t=-\frac{O\cdot\overrightarrow{n}+d}{\overrightarrow{D}\cdot\overrightarrow{n}}$
+​	当分母 $\overrightarrow{D}\cdot\overrightarrow{n}=0$ 且分子 $O\cdot\overrightarrow{n}+d\ne0$，表示射线与平面平行，但是平面不包含射线，不相交。
+​	当分母 $\overrightarrow{D}\cdot\overrightarrow{n}=0$ 且分子 $O\cdot\overrightarrow{n}+d=0$，表示平面包含射线，相交。
+​	当 $t>=0$，表示射线与平面有交点。
+​	当 $t<0$，表示射线在平面背面，没有交点。
+
+## 6 判断任意点在凸多边形内部/外部
 
 ​	射线法、转角法参考[https://blog.csdn.net/WilliamSun0122/article/details/77994526](https://blog.csdn.net/WilliamSun0122/article/details/77994526)。
 
@@ -387,7 +397,7 @@ bool Ray::intersects(const AABB& aabb) const
 
 <img src=".\pic\cg_intersect_turning_angle_optimize_1.png" alt="cg_intersect_turning_angle_optimize_1" style="zoom:75%;" />
 
-## 6 判断多边形的凹凸性
+## 7 判断多边形的凹凸性
 
 ​	依次顺时针遍历多边形的顶点。若向量的叉积保持一致，则是凸多边形，反之是凹多边形。
 
@@ -419,7 +429,7 @@ bool isConvexPolygon(QVector<Point> Polygon)
 }
 ```
 
-## 7 空间划分
+## 8 空间划分
 
 ### 1) BVH
 

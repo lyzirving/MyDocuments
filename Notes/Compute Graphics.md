@@ -215,7 +215,7 @@ $N \cdot \vec{OA}=|N||\vec{OA}|cos\theta$
 
 ### 1) 点到射线的垂足坐标
 
-$\vec{PO}=0 - P$;
+$\vec{PO}= O - P$;
 
 $dot = \vec{PO}\cdot\vec{Ray}$
 

@@ -2089,7 +2089,83 @@ std::vector<int, my_alloc::allocator<int> > v;
 
 ​	在功能上，deque合并了vector和list，但占用更多的**内存**。
 
+# 多线程
 
+## 1 C++11中的几种锁
+
+​	本小节参考自[C++11线程中的几种锁](https://blog.csdn.net/xy_cpp/article/details/81910513)。
+
+### 1) 互斥锁Mutex
+
+​	互斥锁是一个信号量，用于控制多个线程对共享资源互斥访问，避免多个线程在某一时刻同时操作一个共享资源。
+
+​	在某一时刻，只有一个线程可以获取互斥锁，在释放互斥锁之前其他线程都不能获取该互斥锁。如果其他线程想要获取这个互斥锁，那么这个线程只能以**阻塞方式**进行等待。
+
+```c++
+//用互斥元保护列表
+#include <list>
+#include <mutex>
+
+std::list<int> some_list;
+std::mutex some_mutex;
+
+void add_to_list(int new_value)
+{
+    std::lock_guard<std::mutex> guard(some_mutex);
+    some_list.push_back(new_value);
+}
+```
+
+### 2) 条件锁
+
+​	条件锁即条件变量，某一个线程因为某个条件未满足时可以使用条件变量使该程序处于阻塞状态。
+
+​	一旦条件满足以“信号量”的方式唤醒一个因为该条件而被阻塞的线程。
+
+```c++
+//使用std::condition_variable等待数据
+std::mutex mut;
+std::queue<data_chunk> data_queue;
+std::condition_variable data_cond;
+
+void data_preparation_thread()
+{
+    while(more_data_to_prepare())
+    {
+        data_chunk const data = prepare_data();
+        std::lock_guard<std::mutex> lk(mut);
+        data_queue.push(data);
+        data_cond.notify_one();
+    }
+}
+
+void data_processing_thread()
+{
+    while(true)
+    {        
+        std::unique_lock<std::mutex> lk(mut);//这里使用unique_lock是为了后面方便解锁
+        data_cond.wait(lk,{[]return !data_queue.empty();});
+        data_chunk data = data_queue.front();
+        data_queue.pop();
+        lk.unlock();
+        
+        process(data);
+        
+        if(is_last_chunk(data))
+            break;
+    }
+}
+```
+
+​	当来自数据线程中对notify_one()的调用通知条件变量时，线程从睡眠状态中苏醒（解除其阻塞），重新获得互斥元上的锁，并再次检查条件.
+
+​	如果条件已经满足，就从wait()返回值，互斥元仍被锁定；如果条件不满足，该线程解锁互斥元，并恢复等待。
+
+### 3) 自旋锁
+
+### 4) 读写锁
+
+## 2 死锁
 
 
 

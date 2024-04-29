@@ -252,13 +252,13 @@ int main()
 
 ​	**模板**使用泛型来定义函数，泛型可由具体的类型替换。通过将类型作为参数，传递给模板，通过编译器生成该类型的具体函数。
 
-## 2 动态多态
+## 2 动态多态-虚函数
 
 ​	在程序执行期间判断所引用对象的实际类型，根据其实际类型调用相应的方法。
 
 ​	对于有虚函数的类，编译器会维护一张虚函数表(虚表)，对象的前四个字节就是指向虚表的指针(虚表指针)。
 
-​	虚函数表的创建遵循下述原则：
+### 1) 虚函数表创建原则
 
 - 先拷贝基类的虚函数表；
 - 若派生类重写了基类的某个虚函数，就用派生类的虚函数替换虚表同位置的基类虚函数；
@@ -301,6 +301,24 @@ class Derived : public Base
 ```
 
 <img src="./pic/note_pic_1.png" alt="note_pic_1" style="zoom:100%;" />
+
+### 2) 虚函数表和虚函数指针构建时机
+
+- 虚函数构建时机
+
+​	类中存在virtual关键字声明的函数时，编译器在**编译时**就会生成虚函数表。
+
+​	虚函数表实际是一个**数组**，数组元素是各虚函数指针。
+
+​	虚函数表存在于编译后生成的.**o文件**中。编译完成后，其所在的内存段就已确定，运行时被加载到进程的**全局数据区只读代码段中**。
+
+- 虚函数指针的赋值时机
+
+​	编译器会为存在虚函数的类**添加一个成员变量**：虚函数指针。
+
+​	类对象在构造时，编译器会在构造器中为类对象的虚函数指针赋值。因此，若类存在虚函数，但没有构造函数，编译器会创建默认构造函数，就是为给虚函数指针赋值。
+
+​	虚函数指针在类对象的**最前端**。
 
 ## 3 虚析构函数
 
@@ -2195,15 +2213,137 @@ void data_processing_thread()
 
 ### 3) 自旋锁
 
-​	自旋锁是一种**busy-waiting**的锁。当T1正在使用自旋锁，而T2也去申请这个自旋锁，此时T2肯定得不到这个自旋锁。
+​	本小节参考自：[使用C++ 11原子量实现自旋锁](https://www.cnblogs.com/FateTHarlaown/p/9170474.html)。
 
-​	与互斥锁相反的是，运行T2的处理器会一直不断地循环检查锁是否可用（自旋锁请求），直到获取到这个自旋锁为止。
+​	自旋锁是一种基础的同步原语，用于保障对共享数据的互斥访问。
 
-​	如果一个线程想要获取一个被使用的自旋锁，那么它会一直占用CPU，去请求这个自旋锁，使CPU不能去做其他的事情，直到获取到这个自旋锁。
+​	与互斥锁的相比，在获取锁失败的时候**不会使线程阻塞、不会让出CPU、不会切换线程状态**，而是**一直自旋尝试获取锁**。
+
+​	当线程等待自旋锁的时候，**CPU不能做其他事情**，而是**一直处于轮询忙等的状态**。
+
+​	自旋锁主要适用于**被持有时间短**，线程**不希望在重新调度上花过多时间**的情况。如果在持锁时间很长的场景下使用自旋锁，则会导致CPU在这个线程的时间片用尽之前一直消耗在无意义的忙等上，造成计算资源的浪费。
+
+#### 3.1) CAS思想
+
+​	CAS(Compare and Swap)，实现并发算法时常用到的一种技术。这种操作提供了硬件级别的原子操作(通过锁总线的方式)。CAS操作的原型可以认为是：
+
+```c++
+//V: 内存中的变量, A: 期待值, B: 新值
+//当V的值与A相等时，将V与B的值交换
+bool CAS(V, A, B)
+{
+    if (V == A)
+    {
+        swap(V, B);
+        return true;
+    }
+    return false;
+}
+```
+
+​	上述CAS操作必须是**原子的**：要么不做，要么全部完成。
+
+#### 3.2) CAS自旋锁设计思路
+
+##### 3.2.1) 非原子操作
+
+​	以bool变量来表示是否可以进入临界区，有如下代码：
+
+```c++
+// 若flag为true, 表示其他地方已进入临界区, 需等待
+while(flag == true) {}
+flag = true; // 进入临界区, flag设置为true
+// do something ...
+flag = false;// 退出临界区, flag设置为false
+```
+
+​	上述对临界区的判断**不是原子的**，有下述执行步骤：
+
+| step | thread1                | thread2                |
+| ---- | ---------------------- | ---------------------- |
+| 1    | while(flag == true) {} |                        |
+| 2    |                        | while(flag == true) {} |
+| 3    | flag = true            |                        |
+| 4    |                        | flag = true            |
+| 5    | do something           | do something           |
+| 6    | flag = false           |                        |
+| 7    |                        | flag = false           |
+
+​	可以看到，两个线程同时进入了临界区，不满足初衷。
+
+##### 3.2.2) 原子操作
+
+```c++
+b = true;
+while(!CAS(flag, false, b)) {}
+//do something
+flag = false;
+```
+
+​	判断操作与写入操作已经成为了一个整体，当一个线程的CAS操作成功的时候会阻止其他线程进入临界区，到达互斥访问的目的。
+
+##### 3.2.3) 自旋锁实现
+
+​	C++ 11提供了原子量，使用其来实现自旋锁，原子量提供了下述接口：
+
+```c++
+//CAS weak操作, 可能会失败, 但性能会更好
+std::atomic::compare_exchange_weak( T& expected, T desired,
+                                    std::memory_order order =
+                                    std::memory_order_seq_cst ),
+//CAS strong操作, 一定会成功                               
+std::atomic::compare_exchange_strong( T& expected, T desired,
+                                    std::memory_order order =
+                                    std::memory_order_seq_cst )
+//赋值
+void store( T desired, std::memory_order order = std::memory_order_seq_cst )
+```
+
+​	自旋锁的设计如下：
+
+```c++
+#include <atomic>
+
+class SpinLock 
+{
+
+public:
+    SpinLock() : flag_(false) {}
+
+    void lock()
+    {
+        bool expect = false;
+        while (!flag_.compare_exchange_weak(expect, true))
+        {       
+            expect = false;//一定要将expect复原，执行失败时expect结果是未定的
+        }
+        //方法结束, lock()成功, 进入临界区, 此时flag_为true
+    }
+
+    void unlock()
+    {
+        flag_.store(false);
+    }
+
+private:
+    std::atomic<bool> flag_;
+};
+```
+
+​	自旋锁的使用：
+
+```c++
+SpinLock myLock;
+myLock.lock();
+//do something
+myLock.unlock();
+```
 
 ### 4) 读写锁
 
-​	读写锁也叫做**共享-排他锁**。当读写锁以**读模式**锁住时，它是以**共享模式**锁住的；当它以写模式锁住时，它是以**独占模式**锁住的。
+​	读写锁也叫做**共享-排他锁**。
+
+​	当读写锁以**读模式**锁住时，它是以**共享模式**锁住的。当它以写模式锁住时，它是以**独占模式**锁住的。
 
 #### 4.1) C++17 std::shared_mutex
 
@@ -2271,9 +2411,11 @@ void write_content()
 }
 ```
 
-### 5) 原子操作
+## 2 C++ 11的原子量和内存序
 
-## 2 C++锁的包装
+​	本小节参考自这里：[C++ 11的原子量和内存许浅析](https://www.cnblogs.com/FateTHarlaown/p/8919235.html)。
+
+## 3 C++锁的包装
 
 ​	本小节参考自：[锁管理](https://juejin.cn/post/7069550372934647845)。
 
@@ -2459,7 +2601,78 @@ void fun2()
 
 ​	上锁流程：scoped_lock可以接受任意数量的mutex，并将这些mutex传给std::lock来同时上锁。它会对其中一个mutex调用 lock()，对其他调用 try_lock()，若 try_lock() 返回 false 则对已经上锁的 mutex 调用 unlock()，然后重新进行**下一轮上锁**。标准未规定下一轮的上锁顺序，可能不一致，重复此过程直到所有 mutex 上锁，从而达到同时上锁的效果。
 
-## 3 死锁
+## 4 死锁
 
+### 1) 死锁是什么
 
+​	如果你将某个`mutex`上锁了，却一直不释放，另一个线程访问该锁保护的资源的时候，就会发生死锁：
 
+```c++
+Thread A              Thread B
+_mu.lock()          _mu2.lock()
+   // 死锁               // 死锁
+_mu2.lock()         _mu.lock()
+```
+
+​	上述两个线程访问锁的顺序不同，就会导致死锁。
+
+### 2) 避免死锁的建议
+
+#### 2.1) 使用层次锁(即给锁定义上锁顺序)
+
+​	将互斥锁包装一下，给锁定义一个层次的属性，每次按层次由高到低的顺序上锁。
+
+​	下述按地址大小顺序上锁，也是一种变向的层次锁：
+
+```c++
+if(&_mu < &_mu2)
+{
+    _mu.lock();
+    _mu2.unlock();
+}
+else
+{
+    _mu2.lock();
+    _mu.lock();
+}
+```
+
+#### 2.2) 使用std::lock避免死锁
+
+```c++
+std::mutex m1, m2;
+std::unique_lock<std::mutex> lk1(m1, std::defer_lock);
+std::unique_lock<std::mutex> lk2(m2, std::defer_lock);
+std::lock(lk1, lk2);
+```
+
+#### 2.3) 尽量同时只对一个互斥锁上锁
+
+```c++
+{
+    std::lock_guard<std::mutex> guard(_mu);
+    //do something
+}
+
+{
+    std::lock_guard<std::mutex> guard2(_mu2);
+    //do something
+}
+```
+
+#### 2.4) 不要在锁保护区域使用用户自定义代码
+
+```c++
+{
+    std::lock_guard<std::mutex> guard(_mu2);
+    user_function(); // 避免调用user_function, 因为其内部可能操作了其他互斥锁, 导致锁循环
+}
+```
+
+# C++中的设计模式
+
+​	参考[知乎：C++ 有哪些常用又简单的设计模式？](https://www.zhihu.com/question/299975615)。
+
+# C++进程间通信
+
+​	参考[C++进程间通信](https://blog.yanjingang.com/?p=4503)。

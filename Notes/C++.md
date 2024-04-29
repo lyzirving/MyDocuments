@@ -2205,7 +2205,7 @@ void data_processing_thread()
 
 ​	读写锁也叫做**共享-排他锁**。当读写锁以**读模式**锁住时，它是以**共享模式**锁住的；当它以写模式锁住时，它是以**独占模式**锁住的。
 
-#### 4.1) C++17的std::shared_mutex
+#### 4.1) C++17 std::shared_mutex
 
 本小节参考自[C++ 读写锁的用法](https://gukaifeng.cn/posts/c-du-xie-suo-de-yong-fa/index.html)。
 
@@ -2237,13 +2237,227 @@ public:
 };
 ```
 
-#### 4.2) C++14的std::shared_lock
+#### 4.2) C++14 读写锁包装器std::shared_lock
 
-​	待读：[锁管理](https://juejin.cn/post/7069550372934647845)。
+​	shared_lock是shared_mutex的包装器，需要用shared_mutex来构造shared_lock。
+
+​	对shared_lock上锁，实际是以**共享模式**对关联的shared_mutex上锁。若要以**独占模式**对shared_mutex上锁，使用**unique_lock**包装器。
+
+```c++
+std::string file = "Original content."; // Simulates a file
+std::mutex output_mutex; // mutex that protects output operations.
+std::shared_mutex file_mutex; // reader/writer mutex
+
+void read_content(int id)
+{
+    std::string content;
+    {
+        std::shared_lock lock(file_mutex, std::defer_lock); // Do not lock it first.
+        lock.lock(); // Lock it here.
+        content = file;
+    }
+    std::lock_guard lock(output_mutex);
+    std::cout << "Contents read by reader #" << id << ": " << content << '\n';
+}
+
+void write_content()
+{
+    {
+        std::lock_guard file_lock(file_mutex);// exclusive lock
+        file = "New content";
+    }
+    std::lock_guard output_lock(output_mutex);
+    std::cout << "New content saved.\n";
+}
+```
 
 ### 5) 原子操作
 
-## 2 C++的锁包装器
+## 2 C++锁的包装
+
+​	本小节参考自：[锁管理](https://juejin.cn/post/7069550372934647845)。
+
+​	C++的锁管理和互斥量Mutex息息相关，其都使用**RAII**的风格进行锁管理。
+
+​	RAII：Resource Acquisition is initialization，即资源获取即初始化。栈对象构造时进行初始化，栈对象**在对象生命周期结束时进行**自动销毁。如下示例：
+
+```c++
+std::mutex mut;
+{
+  std::lock_guard<std::mutex> lockGuard(mut);  // lock in lock_guard 构造函数
+  sharedVariable++;
+}  // unlock in lock_guard 析构函数
+// -----------------------------------------
+// ---------------不使用包装器----------------
+std::mutex mut;
+mut.lock();
+sharedVariable++;
+mut.unlock();
+```
+
+### 1) C++11 std::lock_guard
+
+​	std::lock_guard是互斥量mutex的包装器，在其作用域中为互斥量提供RAII的风格机制，如下所示：
+
+```c++
+int g_i = 0;
+std::mutex g_i_mutex;  // protects g_i
+ 
+void safe_increment()
+{
+    const std::lock_guard<std::mutex> lock(g_i_mutex);
+    ++g_i; 
+    // g_i_mutex is automatically released when lock goes out of scope
+}
+```
+
+​	优点：创建即加锁，作用域结束自动析构解锁，无需手工解锁。
+
+​	缺点：① 不能中途解锁，必须等作用域结束才能解锁。② 如果定义域范围很大的话，**锁的粒度**就会很大，影响效率。
+
+### 2) C++11 std::unique_lock
+
+​	std::unique_lock也是通用互斥量mutex的包装器，也为互斥量提供RAII的机制，但它具备更多功能接口。lock_guard是unique_lock的缩减版。
+
+​	它允许延迟锁定、锁定的有时限尝试、递归锁定、所有权转移和与条件变量一同使用，它可移动，不可复制。
+
+```c++
+//延迟锁定(构造时不锁定)
+unique_lock( mutex_type& m, std::defer_lock_t t ) noexcept;
+
+//有时限尝试获取锁, 阻塞直到时限到达或拿到锁的控制权
+template< class Rep, class Period >
+bool try_lock_for( const std::chrono::duration<Rep,Period>& timeout_duration );
+
+//移动构造, 所有权转移
+unique_lock( unique_lock&& other ) noexcept;
+
+//向mutex那样调用lock
+void lock();
+```
+
+​	std::unique_lock使用示例：
+
+```c++
+std::mutex mut,
+{
+  std::unique_lock<std::mutex> unilock(mut);// lock in constructor
+  sharedVariable++;
+  unilock.unlock();// 这里可以直接解锁，更灵活了
+  
+  // do other time consuming thing
+  
+  if (unilock.try_lock_for(1s)) 
+  {
+      // read share data
+  }
+}  
+```
+
+​	优点：可以通过lock()、unlock()决定锁的粒度。
+
+​	缺点：① 析构时会判断当前的锁状态来决定是否解锁。② unique_lock是写锁，被锁定后，其他线程无法使用shared_lock或unique_lock相关代码。
+
+### 3) std::lock_guard和std::unique_lock对比
+
+- 相同点
+
+​	lock_guard和unique_lock都是自释放锁。
+
+- 不同点
+
+​	`lock_guard`功能单一，只能用作自释放锁，但其在时间和空间上都比`unique_lock`更快；
+
+​	`unique_lock`具备`lock_guard`的所有能力，同时提供更多的能力，且不会引入double lock / double unlock。
+
+- 锁的粒度
+
+​	锁头锁住的代码的多少称为**锁的粒度**，粒度一般用粗细来描述。
+
+​	锁住的代码少，这个粒度叫细，执行效率高。 锁住的代码多，粒度叫粗，执行效率就低。
+
+​	要学会尽量选择合适粒度的代码进行保护，力度太细，可能漏掉共享数据的保护；粒度太粗，影响效率。
+
+- 不要混用unique_lock和mutex
+
+​	只用了unique_lock，就不要在外部使用mutex本身。原因是unique_lock**内部会维护一个标识**记录自己管理的 锁的状态，如果直接使用mutex，unique_lock无法更新内部mutex的状态。
+
+### 4) C++11 std::lock防止死锁
+
+```c++
+template< class Lockable1, class Lockable2, class... LockableN >
+void lock( Lockable1& lock1, Lockable2& lock2, LockableN&... lockn );
+```
+
+​	如上所述，std::lock()可传入多个可加锁对象，其内部使用了一套**避免死锁的算法**，来给各个锁对象加锁。
+
+​	当其中存在**任意对象**不能获得其锁时，std::lock会阻塞。
+
+​	下述示例可能出现死锁：
+
+```c++
+std::mutex mt1, mt2;
+// thread 1
+void fun1()
+{
+    std::lock_guard<std::mutex> lck1(mt1);//先lock mt1
+    std::lock_guard<std::mutex> lck2(mt2);
+    // do something
+}
+// thread 2
+void fun2()
+{
+    std::lock_guard<std::mutex> lck2(mt2);//先lock mt2
+    std::lock_guard<std::mutex> lck1(mt1);
+    // do something
+}
+ 
+int main ()
+{
+    // 两个线程的互斥量锁定顺序不同，可能造成死锁
+    std::thread t1(func1);
+    std::thread t2(func2);
+ 
+    t1.join();
+    t2.join();
+ 
+    return 0;
+}
+```
+
+​	使用std::lock避免死锁。注意，传入std::lock的是**锁包装器**，因此，无需手动unlock。
+
+```c++
+std::mutex mt1, mt2;
+// thread 1
+void fun1()
+{
+    std::unique_lock<std::mutex> lck1(mt1, std::defer_lock);
+    std::unique_lock<std::mutex> lck2(mt2, std::defer_lock);
+    std::lock(lck1, lck2);// lck1和lck2顺序可以任意
+    // do something
+}
+// thread 2
+void fun2()
+{
+    std::unique_lock<std::mutex> lck1(mt1, std::defer_lock);
+    std::unique_lock<std::mutex> lck2(mt2, std::defer_lock);
+    std::lock(lck2, lck1);// lck1和lck2顺序可以任意
+    // do something
+}
+```
+
+### 5) C++14 std::shared_lock
+
+​	std::shared_lock内容，可参考小节 <a href="#4.2) C++14 读写锁包装器std::shared_lock">4.2) C++14 读写锁包装器std::shared_lock</a>。
+
+### 6) C++17 std::scope_lock
+
+​	scope_lock是以RAII形式的互斥量包装器，它可以包装一个或多个互斥量。
+
+​	如果scope_lock被赋予了多个互斥量，其内部会使用**std::lock来避免死锁**。当scope_lock离开作用域，它会依次解锁。
+
+​	上锁流程：scoped_lock可以接受任意数量的mutex，并将这些mutex传给std::lock来同时上锁。它会对其中一个mutex调用 lock()，对其他调用 try_lock()，若 try_lock() 返回 false 则对已经上锁的 mutex 调用 unlock()，然后重新进行**下一轮上锁**。标准未规定下一轮的上锁顺序，可能不一致，重复此过程直到所有 mutex 上锁，从而达到同时上锁的效果。
 
 ## 3 死锁
 

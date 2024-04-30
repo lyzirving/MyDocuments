@@ -2676,3 +2676,227 @@ std::lock(lk1, lk2);
 # C++进程间通信
 
 ​	参考[C++进程间通信](https://blog.yanjingang.com/?p=4503)。
+
+## 1 进程间通信目的
+
+- 数据传输
+
+- 多进程间共享资源
+
+- 事件通知
+
+- 进程控制：有些进程希望完全控制另一个进程的执行(如Debug进程)，希望能够拦截另一个进程的所有操作，并能够及时知道它的状态改变。
+
+## 2 进程间通信原理
+
+​	每个进程各自有**不同的用户地址空间**，任何一个进程的全局变量在另一个进程中都看不到，所以进程之间要交换数据**必须通过内核**。
+
+​	**在内核中开辟一块缓冲区**，进程1把数据从用户空间拷到内核缓冲区，进程2再从内核缓冲区把数据读走，内核提供的这种机制称为**进程间通信机制**。
+
+<img src=".\pic\c++_ipc.png" alt="c++_ipc" style="zoom:60%;" />
+
+## 3 进程间通信方式
+
+### 1) 匿名管道(Pipe)
+
+​	管道可用于具有**亲缘关系**的进程间通信：允许一个进程和另一个与它有**共同祖先**的进程进行通信。
+
+```c++
+#include <unistd.h>
+
+// linux中创建匿名管道
+int _pipe[2] = {0, 0};
+int ret = pipe(_pipe);  // _pipe[0]管道读端, _pipe[1]管道写端, ret: 0成功, -1失败
+```
+
+​	向两个文件描述符读写数据，实际是在内核的内存缓冲区读写。匿名管道实际是**存在于内存中的文件**。
+
+​	匿名管道由**环形队列**组织，一个进程输入信息，一个进程读出信息。
+
+#### 1.1) 管道通信流程
+
+​	父进程开辟管道，得到管道的读端/写端
+
+<img src=".\pic\c++_pipe-1.png" alt="c++_pipe-1" style="zoom:50%;" align="left"/>
+
+​	父进程调用fork创建子进程，子进程也有两个文件描述符指向同一管道：
+
+<img src=".\pic\c++_pipe-2.png" alt="c++_pipe-2" style="zoom:50%;" align="left"/>
+
+​	父进程关闭读端，子进程关闭写端。父进程可以往管道里写，子进程可以从管道里读。
+
+​	管道是用**环形队列**实现的，**数据从写端流入**，**从读端流出**，就实现了进程间通信。
+
+<img src=".\pic\c++_pipe-3.png" alt="c++_pipe-3" style="zoom:50%;" align="left"/>
+
+#### 1.2) 管道的四种特殊情况
+
+- 读端不关闭，写端关闭
+
+​	管道中剩余的数据都被读取后，再次read会**返回0**，就像读到文件末尾一样。
+
+- 读端关闭，写端不关闭
+
+​	此时该进程会收到信号SIGPIPE，通常会导致进程异常终止。
+
+- 读端不关闭，写端不关闭，但不写数据，
+
+​	管道中剩余的数据都被读取后，再次read会**被阻塞**，直到管道中有数据可读了才重新读取数据并返回。
+
+- 读端不关闭，但不读数据，写端不关闭
+
+​	当写端被写满之后，再次write会阻塞，直到管道中有空位置了才会写入数据并重新返回。
+
+#### 1.3) 管道的缺点
+
+1. 两个进程通过一个管道只能实现**单向通信**。如果想双向通信必须再重新创建一个管道或者使用sockpair。
+2. 只能用于具有**亲缘关系**的进程间通信，例如父子，兄弟进程。
+
+### 2) 命名管道(fifo)
+
+​	命名管道实质是一个**设备文件**，它解决了匿名管道只有亲缘进程通信的局限性。只要可以**访问**设备文件的**路径**，就能够通过FIFO相互通信。
+
+​	匿名管道存在于内存中，而命名管道是存在于**磁盘上的文件**。
+
+```c++
+/* 
+ *	返回值: 成功返回0，失败返回-1
+ *	path: 命名管道的全路径
+ *  mode：创建模式，指明存取权限
+ *  dev: 设备值，取决于文件创建的种类，只有在创建设备文件时，才会用到该值
+*/
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+int mknod(const char *pathname, mode_t mode, dev_t dev);
+
+#include <sys/types.h>
+#include <sys/stat.h>
+int mkfifo(const char *pathname, mode_t mode);
+```
+
+### 3) 共享内存
+
+​	本小节参考自[C++进程间通信之共享内存](https://blog.csdn.net/cylddrmm123/article/details/134096333)。
+
+​	共享内存是一种特殊的内存区域，是在多个进程之间**共享数据的机制**。它允许不同的进程在同一块内存空间中访问和操作共享的数据，而**无需进行数据拷贝或传输**，因此其是效率最高的进程通信方式。
+
+​	如下图所示，两个进程将**同一块物理内存**映射到各自的地址空间中：
+
+<img src=".\pic\shared memory.png" alt="shared memory" style="zoom:100%;" />
+
+#### 3.1) 共享内存的特性
+
+1. 将**物理内存**映射到多个进程的虚拟地址空间中；
+2. 通过操作系统提供的**系统调用和机制**，进程可以创建共享内存区域并映射到自己的虚拟地址空间中；
+3. 直接访问共享内存中的数据进行读写操作，通过适当的**同步机制**保证数据的正确和一致。
+
+#### 3.2) 共享内存读写简单示例
+
+​	下述只是简单的示例，没有考虑同步问题。
+
+​	进程A写入共享内存：
+
+```c++
+#include <iostream>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+ 
+int main() {
+    // 创建共享内存的key
+    key_t key = ftok("shared_mem_example", 1234);
+ 
+    // 创建共享内存区域(内核空间)
+    int shmid = shmget(key, sizeof(int), IPC_CREAT | 0666);
+    if (shmid == -1) 
+    {
+        std::cerr << "Failed to create shared memory segment." << std::endl;
+        return 1;
+    }
+ 
+    // 将共享内存映射到进程的地址空间
+    int* shared_data = (int*)shmat(shmid, NULL, 0);
+    if (shared_data == (int*)-1) 
+    {
+        std::cerr << "Failed to attach shared memory segment." << std::endl;
+        return 1;
+    }
+ 
+    // 写入数据到共享内存
+    *shared_data = 42;
+ 
+    // 用户空间断开与共享内存的连接
+    if (shmdt(shared_data) == -1) 
+    {
+        std::cerr << "Failed to detach shared memory segment." << std::endl;
+        return 1;
+    }
+ 
+    // 将内核空间的内存释放
+    if (shmctl(shmid, IPC_RMID, NULL) == -1) 
+    {
+        std::cerr << "Failed to delete shared memory segment." << std::endl;
+        return 1;
+    }
+    return 0;
+}
+```
+
+​	进程B读共享内存：
+
+```c++
+#include <iostream>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+ 
+int main() {
+    // 获取共享内存的key
+    key_t key = ftok("shared_mem_example", 1234);
+ 
+    // 获取共享内存区域(内核空间)
+    int shmid = shmget(key, sizeof(int), 0666);
+    if (shmid == -1) 
+    {
+        std::cerr << "Failed to get shared memory segment." << std::endl;
+        return 1;
+    }
+ 
+    // 将共享内存映射到进程的地址空间
+    int* shared_data = (int*)shmat(shmid, NULL, 0);
+    if (shared_data == (int*)-1) 
+    {
+        std::cerr << "Failed to attach shared memory segment." << std::endl;
+        return 1;
+    }
+ 
+    // 从共享内存读取数据
+    int data = *shared_data;
+    std::cout << "Data from shared memory: " << data << std::endl;
+ 
+    // 用户空间断开与共享内存的连接
+    if (shmdt(shared_data) == -1) 
+    {
+        std::cerr << "Failed to detach shared memory segment." << std::endl;
+        return 1;
+    }
+ 
+    return 0;
+}
+```
+
+
+
+
+
+
+
+​	
+
+
+
+
+
+​	
+

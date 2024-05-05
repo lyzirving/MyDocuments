@@ -8,6 +8,15 @@
 
 ​	用于角色控制，该Node的脚本模版具有角色控制功能。
 
+## 3 粒子系统GPUParticles3D
+
+​	使用Node：GPUParticles3D，其内部主要包含被重复绘制的Mesh、粒子控制和显示控制。在节点内部，有如下属性：
+
+- DrawPass：控制粒子的Mesh。
+
+- Process Material：控制粒子的运动和显示属性。
+- 父类GeometryInstance3D：可控制粒子Mesh的材质。
+
 # GDScript关键字
 
 ## 1 @tool
@@ -16,7 +25,9 @@
 
 ​	在脚本中添加@tool后，需要reload scene。
 
-# Navigation
+# 功能
+
+## 1 Navigation
 
 <img src=".\pic\godot_navigation.png" alt="godot_navigation" style="zoom:85%;" />
 
@@ -25,6 +36,33 @@
 ​	NavigationAgent3D是客户端(即Enemy)，若客户端想知道如何从A到B，需要向NavigationServer3D请求。
 
 ​	NavigationServer3D会根据NavigationRegion3D中烘焙的Mesh进行计算，找到一条**避开障碍物的路径**，反馈给客户端。
+
+# 设计模式
+
+## 1 class
+
+​	在脚本中，通过：
+
+```c++
+extends Node3D #在extends 之后使用class_name
+class_name XXX
+```
+
+​	可以为脚本附着的Node定义一个类型，有如下作用：
+
+- 类型是**全局的**，可以在**所有脚本**中访问。
+- 通过类型标识不同的Node。
+
+## 2 继承场景
+
+<img src=".\pic\godot_inheritance.png" alt="godot_inheritance" style="zoom:80%;" />
+
+​	节点可以使用继承/派生的设计模式，从而可以：
+
+- 重用脚本中的代码
+- @export的属性，在不同子节点中设置不同的参数。
+
+​	在文件系统中找到基类节点的**场景文件**，右键 -> New Inherited Scene，即可创建子节点。
 
 # 快捷键
 

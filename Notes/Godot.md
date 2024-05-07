@@ -37,6 +37,29 @@
 
 ​	NavigationServer3D会根据NavigationRegion3D中烘焙的Mesh进行计算，找到一条**避开障碍物的路径**，反馈给客户端。
 
+## 2 Animation trick ---- lerp
+
+​	本小节参考自：[Lerp (rachsmith.com)](https://rachsmith.com/lerp/)。lerp是线性插值，即：
+
+```c++
+interpolation = A * (1 - t) + B * t = A + (B - A) * t
+```
+
+​	lerp可以实现简单的easing effect：
+
+```javascript
+// to run on each frame
+function lerp(position, targetPosition) {
+    // update position by 20% of the distance between position and target position
+    position.x += (targetPosition.x - position.x) * 0.2;
+    position.y += (targetPosition.y - position.y) * 0.2;
+}
+```
+
+​	position是当前位置，每帧都在变化。targetPosition是目标值，不会变化。
+
+​	随着targetPosition和position之间的差距变小，就会形成渐进的、平滑的动画效果。
+
 # 设计模式
 
 ## 1 class

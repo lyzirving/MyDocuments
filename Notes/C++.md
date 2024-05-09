@@ -2669,9 +2669,79 @@ std::lock(lk1, lk2);
 }
 ```
 
-# C++中的设计模式
+# 设计模式
 
 ​	参考[知乎：C++ 有哪些常用又简单的设计模式？](https://www.zhihu.com/question/299975615)。
+
+## 1 SOLID设计原则
+
+​	SOLID 是一个首字母缩写，代表以下设计原则：
+
+- 单一责任原则（SRP，**Single Responsibility Principle**）
+- 开闭原则（OCP，**Open-closed Principle**）
+
+​	新增功能是可扩展的(可能在另一个编译单元中)，而不修改原始的类/函数(避免重新编译已经投入生产的内容)。
+
+- 里氏替换原则（LSP，**Liskov Substitution Principle**）
+
+​	如果一个接口可以接受类型为 Parent 的对象，那么它应该同样地可以接受类型为 Child 的对象，而不会有任何破坏。
+
+- 接口隔离原则（ISP，**Interface Segregation Principle**）
+
+​	ISP建议将接口分开，以便于实现者可以根据需求进行接口选择和组合。
+
+- 依赖注入原则（DIP，**Dependency Injection Principle**）
+
+## 2 设计模式实例
+
+### 2.1) Proxy代理模式
+
+#### 2.1.1) 智能指针
+
+​	代理模式最简单、最直接的例子是智能指针。
+
+​	智能指针对普通指针进行了包装，同时保留引用计数，重写了某些操作符，但总的来说，它提供和普通指针一样的使用接口。
+
+```c++
+struct BankAccount {
+  void deposit(int amount) { ... }
+};
+
+BankAccount *ba = new BankAccount;
+ba->deposit(123);
+
+auto ba2 = make_shared<BankAccount>();
+ba2->deposit(123);// 重写->操作符, 使拥有相同的API
+```
+
+#### 2.1.2) 属性代理
+
+​	C++中没有属性，但如果想使用一个字段，同时给它特定的访问/修改(`accessor/mutator`)行为，可以构建属性代理：
+
+```c++
+template <typename T>
+struct Property {
+  T value;
+  Property(const T initial_value) { *this = initial_value; }
+  operator T() { return value; }//类型转换操作符
+  T operator=(T new_value) { return value = new_value; }
+};
+```
+
+​	有如下使用属性的示例：
+
+```c++
+struct Creature 
+{
+  Property<int> strength{10};
+  Property<int> agility{5};
+};
+// ----------------------
+// ----------------------
+Creature creature;
+creature.agility = 20;
+auto x = creature.strength;
+```
 
 # C++进程间通信
 
@@ -2780,6 +2850,8 @@ int mkfifo(const char *pathname, mode_t mode);
 ### 3) 共享内存
 
 ​	本小节参考自[C++进程间通信之共享内存](https://blog.csdn.net/cylddrmm123/article/details/134096333)。
+
+​	共享内存的基础知识可参考:《计算机原理——进程地址空间》章节。
 
 ​	共享内存是一种特殊的内存区域，是在多个进程之间**共享数据的机制**。它允许不同的进程在同一块内存空间中访问和操作共享的数据，而**无需进行数据拷贝或传输**，因此其是效率最高的进程通信方式。
 

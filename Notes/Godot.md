@@ -36,13 +36,15 @@ Key        Door
 
 ​	综上，`_process`不与`_physics_process`同步。但是在**单线程**游戏中(可配置)，它们的执行顺序是`_physics_process` -> `physics step` -> `_process`。
 
-⑥ 执行运行时对Node的插入、删除操作，**开始新的一帧**(进入步骤④)。
+⑥ 执行运行时对Node的插入、删除等节点操作。
 
-⑦ 若游戏被结束，调用Node的`_notification`。
+⑦ 执行渲染，然后**开始新的一帧**(回到步骤④)。
 
-⑧ 释放引擎资源，关闭引擎。
+⑧ 若游戏被结束，调用Node的`_notification`。
 
-## 2 \_process和_physics_process
+⑨ 释放引擎资源，关闭引擎。
+
+## 2 \_process和\_physics_process
 
 ​	本小节参考自：
 
@@ -51,6 +53,34 @@ Key        Door
 [Make it clear when to use _process and _physics_process](https://github.com/godotengine/godot-proposals/discussions/4937)
 
 [Godot Docs: Physics process callback](https://docs.godotengine.org/en/3.3/tutorials/physics/physics_introduction.html#physics-process-callback)
+
+- 图形
+
+​	\_process在每个图形帧中被调用。在_process中只能处理**图形元素**，如移动**MeshInstance3D**等。
+
+​	在Vsync没有开启的情况下，图形帧率只与应有程序的处理速度相关。VSync(默认开启)会影响_process，硬件显示帧率和应用的帧率会影响\_process的处理周期。\_process中传入了delta参数，让开发者进行帧率无关的计算。
+
+​	在\_process中**避免**读取物理属性(position、raycast等)，这些物理属性会由物理服务更新。
+
+​	可使用`set_process`来禁用\_process。
+
+- 物理
+
+​	\_physics_process是物理处理，Godot默认会开启**物理处理线程**，其处理帧率固定在60fps(可配置)。
+
+​	Godot在调用\_physics_process之后，会进行物理模拟(physics step)，计算物理属性。若需要物理模拟的反馈，就需要使用\_physics_process。
+
+​	在\_physics_process中，只能处理物理元素，如**PhysicsBody3D、KinematicBody**等。
+
+​	可使用`set_physics_process`禁用\_physics_process。
+
+- 非物理，非图形的情况
+
+​	如要处理非图形且非物理的固定周期逻辑，可考虑使用`Timer`。
+
+- 输入事件Input
+
+​	可以在\_process或\_physics_process中处理Input。若要获取最准确的结果，最好在\_input中处理。
 
 # Node
 

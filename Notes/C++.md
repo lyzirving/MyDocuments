@@ -2743,6 +2743,107 @@ creature.agility = 20;
 auto x = creature.strength;
 ```
 
+### 2.2) 适配器模式
+
+​	适配器模式：**用已有的东西转换出想要的东西**。
+
+​	和迭代器模式的区别：封装底层的细节，对所有底层数据结构不同的容器，提供统一的访问方式。
+
+#### 2.2.1) std::stack
+
+​	std::stack是一种**适配器容器**，是一种FILO(last-in, first out)的数据结构。其数据入栈、出栈都是在**栈顶**进行，栈顶实际是**容器的尾部**。
+
+​	std::stack底层实现可以是std::deque、std::vector、std::queue等数据结构。
+
+​	下述通过**模板**的方式，使用不同容器实现std::stack，体现了适配器的设计理念：用已有的东西转换出想要的东西。其默认容器为**deque**(双端队列)。
+
+```c++
+// T数据类型，Container代表适配的容器
+template<class T, class Container = deque<T>>
+class stack
+{
+    public:
+        // push、pop、top等访问操作，都是对容器尾部的数据进程操作, 体现了LIFO的特征
+    	void push_back(const T& x) { _con.push_back(x); }
+	    void pop() { _con.pop_back(); }
+    	T& top() { return _con.back(); }
+		const T& top() const { return _con.back(); }
+    
+		//const对象只能调用const成员函数，不能调用非const成员函数，因为权限不能放大。
+		//非const对象既能调用const成员函数，又能调用非const成员函数，因为权限可以平移或缩小。
+		bool empty() { return _con.empty(); }    
+	    size_t size() { return _con.size(); }
+    
+    private:
+		Container _con;
+};
+```
+
+#### 2.2.2) std::queue
+
+​	std::queue是一种**适配器容器**，其要求有出队、入队、取头元素、取尾元素的接口。
+
+​	std::queue常见的底层容器为std::list或std::deque。
+
+```c++
+//template<class T, class Container = deque<T>>
+template<class T, class Container = list<T>>	
+class queue
+{
+public:
+    void push(const T& x) { _con.push_back(x); }
+    void pop() { _con.pop_front(); }
+    const T& front() { return _con.front(); }
+	const T& back() { return _con.back(); }
+	//const对象只能调用const成员函数，不能调用非const成员函数，因为权限不能放大。
+	//非const对象既能调用const成员函数，又能调用非const成员函数，因为权限可以平移或缩小。
+	bool empty() { return _con.empty(); }
+	size_t size() { return _con.size(); }
+private:
+	Container _con;
+};
+```
+
+### 2.3) 观察者模式
+
+​	基本实现如下：
+
+​	观察者：
+
+```c++
+template <typename T>
+struct Observer {
+  virtual void field_changed(T &source, const string &field_name) = 0;
+};
+```
+
+​	被观察者：
+
+```c++
+template <typename T>
+struct Observable {
+  void notify(T& source, const string& name);
+  void subscrible(Observer<T>* f) { observers.emplace_back(f); };
+  void unsubscrible(Observer<T>* f);
+ private:
+  vector<Observer<T*>> observers;
+};
+```
+
+​	一些思考：
+
+- 处理取消订阅的观察者
+
+  - 如果不打算支持取消订阅——将节省大量的实现观察者的工作，因为在重入场景中没有删除问题。
+  - 如果计划支持显式的 `unsubscribe()` 函数，不应该直接在函数中擦除-删除，而是将元素标记为删除并稍后删除它们。
+  - 如果不喜欢在（可能为空）裸指针上调度的想法，考虑使用 `weak_ptr` 代替。
+ - `Observer<T>` 的函数多线程调用
+   - 相关函数上放置 `scoped_lock`；
+   - 你可以使用线程安全的集合，例如 `TBB/PPLcurrenct_vector`(并发库)，但将失去顺序保证。
+
+
+​	没有理想的 `Observer` 实现能够满足所有条件。 无论采用哪种实现方式，都需要做出一些妥协。
+
 # C++进程间通信
 
 ​	参考[C++进程间通信](https://blog.yanjingang.com/?p=4503)。

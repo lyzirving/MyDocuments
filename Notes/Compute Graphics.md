@@ -1009,9 +1009,9 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 <img src=".\pic\cg_pbr_absorb.png" alt="cg_pbr_absorb" style="zoom:50%;" align="left" /><img src=".\pic\cg_pbr_scattering.png" alt="cg_pbr_scattering" style="zoom:50%;" />
 
-#### 2.3) 漫反射和次表面反射本质相同
+#### 2.3) 漫反射和次表面反射
 
-​	漫反射和次表面散射其实是相同物理现象，本质都是**折射光**的**次表面散射**的结果。
+​	漫反射和次表面散射其实是**相同物理现象**，本质都是**折射光**的**次表面散射**的结果。
 
 ​	它们的区别是相对于观察尺度的散射距离：散射距离相较于像素来说微不足道，次表面散射便可以近似为漫反射。
 
@@ -1098,9 +1098,9 @@ for(int i = 0; i < steps; i++)
 
 ​	因为游戏和电影中的大多数物体都是不透明的，用BRDF就完全足够。而BSDF、BTDF、BSSRDF往往更多用于**半透明材质**和**次表面散射材质**。
 
-## 4 BRDF
+## 4 Disney Principled BRDF
 
-### 1) Disney Principled BRDF 
+### 1) Disney Principled BRDF基本概念
 
 ​	迪士尼BRDF核心理念：**着色模型是艺术导向（Art Directable）的，而不一定要是完全物理正确（physically correct）**，能让美术同学用非常直观的少量参数，以及非常标准化的工作流，快速实现涉及大量不同材质的真实感的渲染工作。
 
@@ -1109,15 +1109,17 @@ for(int i = 0; i < steps; i++)
 - **baseColor（基础色）**：表面颜色，通常由纹理贴图提供。
 
 - **subsurface（次表面）**：使用次表面近似控制漫反射形状。
-- **metallic（金属度）**：金属（0 = 电介质，1 = 金属）。这是两种不同模型之间的线性混合。金属模型没有漫反射成分，并且还具有等于基础色的着色入射镜面反射。
-- **specular（镜面反射强度）**：入射镜面反射量。用于取代折射率。
+- **metallic（金属度）**：金属（0 = 电介质，1 = 金属）。这是两种**不同模型之间的线性混合**。**金属模型没有漫反射成分**，还具有等于基础色的着色入射镜面反射。
+- **specular（镜面反射强度）**：入射镜面反射量。用于**取代折射率**。
 - **specularTint（镜面反射颜色）**：对美术控制的让步，用于对基础色（base color）的入射镜面反射进行颜色控制。掠射镜面反射仍然是非彩色的。
 - **roughness（粗糙度）**：表面粗糙度，控制漫反射和镜面反射。
-- **anisotropic（各向异性强度）**：各向异性程度。用于控制镜面反射高光的纵横比。（0 =各向同性，1 =最大各向异性）
-- **sheen（光泽度）**：一种额外的掠射分量（grazing component），主要用于布料。
+- **anisotropic（各向异性强度）**：各向异性程度。用于控制**镜面反射高光的纵横比**。（0 =各向同性，1 =最大各向异性）
+- **sheen（光泽度）**：一种额外的掠射分量（grazing component），主要用于**布料**。
 - **sheenTint（光泽颜色）**：对sheen（光泽度）的颜色控制。
 - **clearcoat（清漆强度）**：有特殊用途的第二个镜面波瓣（specular lobe）。
 - **clearcoatGloss（清漆光泽度）**：控制透明涂层光泽度，0 =“缎面（satin）”外观，1 =“光泽（gloss）”外观。
+
+<img src=".\pic\pbr_disney_principled_brdf_params.png" alt="pbr_Disney_Principled_BRDF_params" style="zoom:60%;" />
 
 ### 2) BRDF的几何意义
 
@@ -1129,35 +1131,60 @@ for(int i = 0; i < steps; i++)
 
 ​	若表面是**完美光滑**的，那么与$\omega_{i}$对称的出射角度的BRDF应该为1，其余角度的BRDF为0。
 
-### 3) Cook-Torrance BRDF
+​	本质上，Disney Principled BRDF模型是金属和非金属的**混合型模型**，最终结果是**基于金属度(metallic)在金属BRDF和非金属BRDF之间进行线性插值**：
 
-​	Microfacet Cook-Torrance BRDF是实践中**使用最广泛**的模型，实际上也是人们可以想到的**最简单**的微平面模型。
+<img src=".\pic\pbr_metallic_interpolated.png" alt="pbr_metallic_interpolated" style="zoom:40%;" />
 
-​	它仅对几何光学系统中的单层微表面上的单个散射进行建模，**没有考虑多次散射**，**分层材质**，以及**衍射**。
+<div align="center">Disney BRDF模型是金属和非金属基于金属度(metallic)的线性混合模型</div>
 
-<img src=".\pic\cg_pbr_cook_torrance_brdf.png" alt="cg_pbr_cook_torrance_brdf" style="zoom:100%;" align="left"/>
+​	这套渲染理念统一了金属和非金属的材质表述，仅通过少量的参数来涵盖自然界中绝大多数的材质，得到非常逼真的渲染品质。因此，在PBR的金属/粗糙度工作流中，固有色(baseColor)贴图才会同时包含金属和非金属的材质数据：① 金属的反射率值；② 非金属的漫反射颜色。
 
-$f_{cook-torrance}=\frac{D(h)F(v,h)G(l,v,h)}{4(l\cdot n)(v \cdot n)}$ 
+### 3) Disney Principled BRDF的着色模型
 
-#### 4.1) 折射光、反射光比例
+​	Disney采用了通用的microfacet Cook-Torrance BRDF着色模型，其是实践中**使用最广泛**的模型，如下所示：
 
-​	**折射光线比例**$k_{d}$：用于产生漫反射，漫反射的本质是**折射光次表面的散射**。
+<img src=".\pic\pbr_disney_cook-torrance_brdf.png" alt="pbr_disney_cook-torrance_brdf" style="zoom:70%;" />
+
+​	其中：
+
+- diffuse为漫反射项；
+- $\frac{D(\theta_{h})F(\theta_{d})G(\theta_{l}, \theta_{v})}{4cos\theta_{l}cos\theta_{v}}$为镜面反射项；
+- D是微平面分布函数，主要负责镜面反射波峰的形状；
+- F是菲涅尔反射系数；
+- G是几何衰减 / 阴影项。
+
+​	其中，**折射光线比例**$k_{d}$：用于产生漫反射，漫反射的本质是**折射光次表面的散射**。
 
 ​	**反射光线比例**$k_{s}$：用于产生高光。
 
-#### 4.2) 漫反射模型
+#### 3.1) 漫反射项Disney Diffuse
 
-​	Diffuse BRDF可分为传统型和基于物理型两大类。其中，传统型主要是上述提及的Lambert。
+​	Disney表示，Lambert漫反射模型在边缘上通常太暗，而因此尝试添加菲涅尔因子以使其在物理上更合理，但会导致其更暗。
 
-​	其他模型渲染效果更好，但更消耗算力。Epic Games已证明，对于实时渲染，传统的Lambert模型已经足够。
+​	所以，根据对Merl 100材质库的观察，Disney开发了一种用于漫反射的新的经验模型，以在光滑表面的漫反射菲涅尔阴影和粗糙表面之间进行平滑过渡。
 
-​	$f_{lambert}=\frac{c}{\pi}$，其中$c$是$albedo$或表面颜色(纹理)。
+​	Disney使用了Schlick Fresnel近似，并修改掠射逆反射(grazing retroreflection response)以达到其特定值由粗糙度值确定，而不是简单为0：
 
-#### 4.3) 高光模型
+<img src=".\pic\pbr_disney_brdf_diffuse.png" alt="pbr_disney_brdf_diffuse" style="zoom:70%;" />
 
-##### 4.3.1) 前置知识
+​	其中，$F_{D90} = 0.5 + 2 roughness cos^{2}\theta_{d}$，Disney Diffuse的代码实现如下：
 
-###### (1) 正确的法线方向	
+```glsl
+// [Burley 2012, "Physically-Based Shading at Disney"]
+float3 Diffuse_Burley_Disney( float3 DiffuseColor, float Roughness, float NoV, float NoL, float VoH )
+{
+	float FD90 = 0.5 + 2 * VoH * VoH * Roughness;
+	float FdV = 1 + (FD90 - 1) * Pow5( 1 - NoV );
+	float FdL = 1 + (FD90 - 1) * Pow5( 1 - NoL );
+	return DiffuseColor * ( (1 / PI) * FdV * FdL );
+}
+```
+
+#### 3.2) 高光项
+
+##### 3.3.1) 前置知识
+
+- 正确的法线方向	
 
 ​	每个表面点将来自给定进入方向的光反射到单个出射方向，该出射方向取决于微观几何法线（microgeometry normal）**m** 的方向。
 
@@ -1167,27 +1194,94 @@ $f_{cook-torrance}=\frac{D(h)F(v,h)G(l,v,h)}{4(l\cdot n)(v \cdot n)}$
 
 <img src=".\pic\cg_pbr_brdf_normal.png" alt="cg_pbr_brdf_normal" style="zoom:60%;" />
 
-###### (2) 被遮蔽的光
+- 被遮蔽的光
 
-​	不是所有能被反射到 $v$ 的光都会对BRDF做贡献。这些光的一部分可能会因为 $l$ 方向或 $v$ 方向的遮挡，从镜面反射中抹除。
+​	不是所有能被反射到 $v$ 的光都会对BRDF做贡献。这些光的一部分可能会因为 $l$ 方向的遮挡(**图1**)、 $v$ 方向的遮挡(**图2**)，从镜面反射中抹除。
 
-<img src=".\pic\cg_pbr_brdf_shadow.png" alt="cg_pbr_brdf_shadow" style="zoom:65%;" />
+​	阴影区没有接收 $l$ 的直射光，但接受了其他表面区域的反射光。不过microfacet理论忽略了这些相互反射(**图3**)。
 
-<center> l方向的遮挡——阴影</center>
+<img src=".\pic\cg_pbr_brdf_shadow.png" alt="cg_pbr_brdf_shadow" style="zoom:65%;" align="left"/><img src=".\pic\cg_pbr_brdf_mask.png" alt="cg_pbr_brdf_mask" style="zoom:65%;" /><img src=".\pic\cg_pbr_brdf_interact_reflection.png" alt="cg_pbr_brdf_interact_reflection" style="zoom:65%;" />
 
-<img src=".\pic\cg_pbr_brdf_mask.png" alt="cg_pbr_brdf_mask" style="zoom:65%;" />
+##### 3.3.2) 法线分布项(Specular D)
 
-<center> v方向的遮挡——掩蔽</center>
+​	$D(\theta_{h})$描述微表面**正确朝向**的法线的**分布概率**。**正确朝向**指能够将来自 $l$ 的光反射到观察方向 $v$ 的法线方向。
 
-​	在阴影区没有接收 $l$ 的直射光，但它接受了其他表面区域的反射光。但microfacet理论忽略了这些相互反射。
+​	流行的模型中，GGX拥有最长的尾部。而GGX其实与Blinn (1977)推崇的Trowbridge-Reitz(TR)(1975)分布等同。
 
-<img src=".\pic\cg_pbr_brdf_interact_reflection.png" alt="cg_pbr_brdf_interact_reflection" style="zoom:65%;" />
+​	然而，对于许多材质而言，即便是GGX分布，仍然没有足够长的尾部。
 
-<center>忽略了其他表面的相互反射</center>
+​	Trowbridge-Reitz(TR)的公式为：
 
-##### 4.3.2) 菲涅尔方程
+<img src=".\pic\pbr_disney_specular_d_dr.png" alt="pbr_disney_specular_d_dr" style="zoom:70%;" />
 
-###### (1) 菲涅尔效应
+​	其中：c为缩放常数(scaling constant)；$\alpha$为粗糙度参数，值在0~1之间，0表完全平滑的分布，1表示完全粗糙偶均匀的分布。
+
+​	来自Berry(1923)的分布函数和Trowbridge-Reitz分布具有非常相似的形式，但指数为1而不是2，从而导致了更长的尾部：
+
+<img src=".\pic\pbr_disney_specular_d_berry.png" alt="pbr_disney_specular_d_berry" style="zoom:70%;" />
+
+​	通过Trowbridge-Reitz和Berry的形式的对比，Disney发现其具有相似的形式，只是幂次不同。
+
+​	于是，Disney将Trowbridge-Reitz进行了N次幂的推广，并将其取名为Generalized-Trowbridge-Reitz，GTR：
+
+<img src=".\pic\pbr_disney_specular_d_gtr.png" alt="pbr_disney_specular_d_gtr" style="zoom:70%;" />
+
+​	上述中，$\gamma=1$时，GTG即Berry分布；$\gamma=2$时，GTG即Trowbridge-Reitz分布。
+
+​	以下为各种$\gamma$值的GTR分布曲线与$\theta_{h}$的关系图示：
+
+<img src=".\pic\pbr_specular_d_gamma_and_theta_h.png" alt="pbr_specular_d_gamma_and_theta_h" style="zoom:60%;" />
+
+​	另外，Disney Principled BRDF中使用了两个固定的镜面反射波瓣(specular lobe)，且都使用GTR模型，可以总结如下：
+
+- **主波瓣（primary lobe）**
+
+- - 使用γ= 2的GTR（即GGX分布）
+  - 代表基础底层材质（Base Material）的反射
+  - 可为各项异性（anisotropic） 或各项同性（isotropic）的金属或非金属
+
+- **次级波瓣（secondary lobe）**
+
+- - 使用γ= 1的GTR（即Berry分布）
+  - 代表基础材质上的清漆层（ClearCoat Layer）的反射
+  - 一般为各项同性（isotropic）的非金属材质，即清漆层（ClearCoat Layer）
+
+​	以下是γ= 1和γ= 2时GTR分布的Shader实现代码：
+
+```glsl
+// Generalized-Trowbridge-Reitz distribution
+float D_GTR1(float alpha, float dotNH)
+{
+    float a2 = alpha * alpha;
+    float cos2th = dotNH * dotNH;
+    float den = (1.0 + (a2 - 1.0) * cos2th);
+
+    return (a2 - 1.0) / (PI * log(a2) * den);
+}
+
+float D_GTR2(float alpha, float dotNH)
+{
+    float a2 = alpha * alpha;
+    float cos2th = dotNH * dotNH;
+    float den = (1.0 + (a2 - 1.0) * cos2th);
+
+    return a2 / (PI * den * den);
+}
+```
+
+​	以及各项异性的版本：
+
+```glsl
+float D_GTR2_aniso(float dotHX, float dotHY, float dotNH, float ax, float ay)
+{
+    float deno = dotHX * dotHX / (ax * ax) + dotHY * dotHY / (ay * ay) + dotNH * dotNH;
+    return 1.0 / (PI * ax * ay * deno * deno);
+}
+```
+
+##### 3.3.3) 菲涅尔项前置知识
+
+- 菲涅尔效应
 
 ​	影响菲涅尔效应的关键参数在于**每个微平面的法向量**和**入射光线的角度**。在**宏观层面**看到的菲涅尔效应实际上是**微观层面**微平面菲涅尔效应的**平均值**。
 
@@ -1195,11 +1289,9 @@ $f_{cook-torrance}=\frac{D(h)F(v,h)G(l,v,h)}{4(l\cdot n)(v \cdot n)}$
 
 ​	光线非垂直时，**入射角**越大，**反射角**越大，**视线夹角**越小(反射角取余)，反射越明显。因此，当视线越小，反射会逐渐增强。由下图所示，**反射越弱的地方，越模糊**。
 
-<img src=".\pic\cg_fresnel_effect.jpg" alt="cg_fresnel_effect" style="zoom:45%;" />
+<img src=".\pic\cg_fresnel_effect.jpg" alt="cg_fresnel_effect" style="zoom:50%;" align="left"/><img src=".\pic\cg_fresnel_effect_2.jpg" alt="cg_fresnel_effect_2" style="zoom:40%;" />
 
-<img src=".\pic\cg_fresnel_effect_2.jpg" alt="cg_fresnel_effect_2" style="zoom:50%;" />
-
-###### (2) 不同材质的菲涅尔效应
+- 不同材质的菲涅尔效应不同
 
 ​	**导体**(如金属)的菲涅尔效应一般很**弱**，主要是因为导体本身的反射率就已经很强。
 
@@ -1207,57 +1299,83 @@ $f_{cook-torrance}=\frac{D(h)F(v,h)G(l,v,h)}{4(l\cdot n)(v \cdot n)}$
 
 ​	**绝缘体材质**的菲涅尔效应就很明显，比如折射率为1.5的玻璃，在表面法向量方向的反射率仅为4%，但当视线与表面法向量夹角很大的时候，反射率可以接近100%。
 
-###### (3) 方程几何意义
+- 菲尼尔项的几何意义
 
-​	菲涅尔方程：$F(v, h, F_{0})$。
-
-​	菲涅尔方程描述的是**被反射的光线**所占的百分比(包含反射、折射)，这个比例会随着**观察的角度**不同而不同。
+​	菲涅尔方程描述的是**被反射的光线**所占的百分比，这个比例会随着**观察的角度**不同而不同。
 
 ​	利用该反射比率和**能量守恒原则**，可以得出光线被折射的部分以及光线剩余的能量。
 
-###### (4) 真实世界材质的渲染属性总结
+- 真实世界材质的渲染属性总结
 
 ​	可通过$F_{0}$来区分金属、电介质和半导体。
 
-- 金属
+| 金属   | 也被称为导体(conductors)，具有很高的$F_{0}$：几乎总是0.5或更高；<br>一些金属具有在可见光谱范围内变化的光学特性，导致这些金属有有色的$F_{0}$(RGB三通道)；<br>金属会**立即吸收任何折射光线**，不会有任何次表面散射或透明感；<br>黄金是最亮的金属之一，具有一个不寻常的$F_{0}$：R通道略高于1，且具有特别低的B通道(低于0.5)。 |
+| ------ | ------------------------------------------------------------ |
+| 电介质 | 也被称为**绝缘体**(Insulators)；<br>PBR工作流一般不考虑半导体，所以电介质也被称为非金属；<br>日常生活中大多数材质都是电介质，如玻璃、皮肤、木头、混凝土等；<br>电介质的$F_{0}$通常为**0.06或更低**；<br>水也是电介质，但水的导电性是由于水中的杂质造成，水本身不导电。 |
+| 半导体 | 半导体的导电性介于绝缘体和导体之间，其菲涅尔反射率也位于最亮的绝缘体和最暗的导体之间；<br>出于实用性，PBR工作流一般**不考虑半导体**，即避免再**0.2~0.45之间**的$F_{0}$。 |
 
-​	金属也被称为**导体(conductors)**，具有很高的$F_{0}$：几乎总是**0.5或更高**；
+##### 3.3.4) 菲涅尔项(Specular F): Schlick Fresnel
 
-​	一些金属具有在可见光谱范围内变化的光学特性，导致这些金属有有色的$F_{0}$(RGB三通道)；
+​	Disney表示Schlick Fresnel近似已经足够精确，且比完整的菲涅尔方程简单得多。
 
-​	金属会**立即吸收任何折射光线**，不会有任何次表面散射或透明感；
+​	而由于其他因素，Schlick Fresne近似引入的误差明显小于其他因素产生的误差，其公式如下：
 
-​	金属的**所有颜色**都来自菲涅尔反射；
+<img src=".\pic\pbr_specular_f_shclick_fresnel.png" alt="pbr_specular_f_shclick_fresnel" style="zoom:70%;" />
 
-​	黄金是最亮的金属之一，具有一个不寻常的$F_{0}$：R通道略高于1，且具有特别低的B通道(低于0.5)。
+​	其中：
 
-- 电介质
+- 常数$F_{0}$表示垂直入射时的镜面反射率；
+- $\theta_{d}$为半矢量h和视线v之间的夹角。
 
-​	电介质也被称为**绝缘体**(Insulators)；
+​	实现代码：
 
-​	PBR工作流一般不考虑半导体，所以电介质也被称为非金属；
+```glsl
+// [Schlick 1994, "An Inexpensive BRDF Model for Physically-Based Rendering"]
+float3 F_Schlick(float HdotV, float3 F0)
+{
+    return F0 + (1 - F0) * pow(1 - HdotV , 5.0));
+}
+```
 
-​	日常生活中大多数材质都是电介质，如玻璃、皮肤、木头、混凝土等；
+##### 3.3.5) 几何项(Specular G)：Smith-GGX
 
-​	电介质的$F_{0}$通常为**0.06或更低**。
+​	几何项描述微平面自成阴影的属性，也可理解为当m = h时，未被遮蔽的表面点的百分比。
 
-​	水也是电介质，但水的导电性是由于水中的杂质造成，水本身不导电。
+​	对于主镜面波瓣(primary specular lobe)，Disney参考了 Walter的近似方法，使用Smith GGX导出的G项，并将粗糙度参数进行**重映射**以减少光泽表面的极端增益，即将α 从[0, 1]重映射到[0.5, 1]，α的值为(0.5 + roughness/2)^2。从而使几何项的粗糙度变化更加平滑，更便于美术人员的使用。
 
-- 半导体
+​	以下为Smith GGX的几何项的表达式：
 
-​	半导体的导电性介于绝缘体和导体之间，其菲涅尔反射率也位于最亮的绝缘体和最暗的导体之间；
+<img src=".\pic\pbr_disney_brdf_specular_g.png" alt="pbr_disney_brdf_specular_g" style="zoom:70%;" />
 
-​	出于实用性，PBR工作流一般**不考虑半导体**，即避免再**0.2~0.45之间**的$F_{0}$。
+​	对于对清漆层进行处理的次级波瓣(secondary lobe)，Disney没有使用Smith G推导，而是直接使用固定粗糙度为0.25的GGX的 G项，便可以得到合理且很好的视觉效果。
 
-##### 4.3.3) 法线分布函数
+​	代码实现如下：
 
-​	$D(h)$描述微表面**正确朝向**的法线的**分布概率**。**正确朝向**指能够将来自 $l$ 的光反射到观察方向 $v$ 的法线方向。
+```glsl
+// Smith GGX G项，各项同性版本
+float smithG_GGX(float NdotV, float alphaG)
+{
+    float a = alphaG * alphaG;
+    float b = NdotV * NdotV;
+    return 1 / (NdotV + sqrt(a + b - a * b));
+}
 
-##### 4.3.4) 几何函数
+// Smith GGX G项，各项异性版本
+// Derived G function for GGX
+float smithG_GGX_aniso(float dotVN, float dotVX, float dotVY, float ax, float ay)
+{
+	return 1.0 / (dotVN + sqrt(pow(dotVX * ax, 2.0) + pow(dotVY * ay, 2.0) + pow(dotVN, 2.0)));
+}
 
-​	$G(l, v, h)$描述微平面自成阴影的属性，即当m = h时，未被遮蔽的表面点的百分比。
-
-​	分母$4(l\cdot n)(v \cdot n)$：校正因子（correctionfactor），作为微观几何的局部空间和整个宏观表面的局部空间之间变换的微平面量的校正。
+// GGX清漆几何项
+// G GGX function for clearcoat
+float G_GGX(float dotVN, float alphag)
+{
+	float a = alphag * alphag;
+	float b = dotVN * dotVN;
+	return 1.0 / (dotVN + sqrt(a + b - a * b));
+}
+```
 
 ## 5 IBL
 

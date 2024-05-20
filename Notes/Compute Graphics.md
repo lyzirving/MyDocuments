@@ -1027,7 +1027,7 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 ​	散射的次表面光**集中出现在单个像素区域内**。在渲染时，只考虑照射到该单一像素的光，估算返回的光量，模拟效果。这就是对漫反射的抽象。
 
-<img src=".\pic\pbr_subsurface_scattering.png" alt="pbr_subsurface_scattering" style="zoom:70%;" align="left"/><img src=".\pic\pbr_subsurface_scatter_diffuse.png" alt="pbr_subsurface_scatter_diffuse" style="zoom:80%;" />
+<img src=".\pic\pbr_subsurface_scattering.png" alt="pbr_subsurface_scattering" style="zoom:60%;" align="left"/><img src=".\pic\pbr_subsurface_scatter_diffuse.png" alt="pbr_subsurface_scatter_diffuse" style="zoom:60%;" />
 
 
 

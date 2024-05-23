@@ -2380,9 +2380,9 @@ RenderSceneToDepthMap();
 glCullFace(GL_BACK); // don't forget to reset original culling face
 ```
 
-### 2) 阴影边缘过硬：pcf柔化
+### 2) 阴影边缘过硬：PCF柔化
 
-​	pcf（percentage-closer filtering）通过采样周围的纹素，柔滑过硬的边缘。
+​	PCF(Percentage-Closer Filtering)通过采样周围的纹素，柔滑过硬的边缘。
 
 ​	伪代码如下：
 
@@ -2399,6 +2399,13 @@ for(int x = -1; x <= 1; ++x)
 }
 shadow /= 9.0;
 ```
+
+​	PCF在实现上很简单，是目前最泛用的软阴影和阴影抗锯齿的解决方案，但仍然存在许多问题：
+
+1. 计算过程中需要采样多次，带宽的开销不小，尤其是在移动平台
+2. 如果采样次数少，模糊程度就不够，采样次数多，性能消耗又大，需要折中取平衡
+3. 因为每一次阴影计算只能得到01两种值，所以预先对Shadowmap进行过滤是没有意义的
+4. 计算阴影的时间复杂度是k*n，其中k是采样次数，n是片段数量
 
 ## 3 级联阴影映射(Cascaded Shadow Map)
 

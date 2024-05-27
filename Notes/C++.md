@@ -2139,32 +2139,164 @@ std::vector<int, my_alloc::allocator<int> > v;
 
 # 多线程
 
-## 1 C++11中的几种锁
+- 进程与线程
+
+​	进程是资源分配和调度的一个独立单位；
+
+​	线程是进程的一个实体，是CPU调度和分配的基本单位。
+
+​	同一个进程中的多个线程的**内存资源是共享的**，各线程都可以改变进程中的变量。因此在执行多线程运算的时候要注意执行顺序。
+
+- 并行与并发
+
+​	并行(parallellism)：是多个任务在同一时刻同时在执行。
+
+​	并发(concurrency)：在一个**时间段内**，多个任务交替进行。虽然看起来像在同时执行，但其实是交替的。
+
+- 线程的入口函数
+
+​	每个应用程序至少有一个进程，而每个进程至少有一个主线程。除了主线程外，在一个进程中还可以创建多个子线程。
+
+​	**每个线程都需要一个入口函数**，入口函数返回退出，该线程也会退出，主线程就是以main函数作为入口函数的线程。
+
+## 1 C++线程管理std::thread
+
+​	本小节参考自：[史上最全的C++面试宝典（九）—— 多线程](https://blog.csdn.net/qq_35034604/article/details/107736749?)。
+
+### 1) 启动线程
+
+​	std::thread的构造函数需要的是可调用(callable)类型，除了函数外，还可以调用：lambda表达式、重载了operator()运算符的类的实例。
+
+```c++
+#include <iostream>
+#include <thread>
+ 
+using namespace std;
+ 
+void output(int i)
+{
+    cout << i << endl;
+}
+
+class foo
+{
+public:
+    void bar1(int n)
+    {
+        cout << "n = " << n <<endl;
+    }
+    static void bar2(int n)
+    {
+        cout << "static function is running" << endl;
+        cout << "n = " << n << endl;
+    }
+};
+ 
+int main()
+{
+    for (uint8_t i = 0; i < 4; i++)
+    {
+        //创建线程t，第一个参数为入口callable，后续参数为入口函数使用的参数
+        //thread t(callable, arg1, arg2, arg3, ...);
+        thread t(output, i);
+        //允许该线程在后台运行
+        t.detach(); 
+    }    
+    
+    foo f;
+    //调用类成员函数, 需要传入实例变量为参数。
+    thread t1(&foo::bar1, &f, 5); 
+    t1.join();
+    //调用类静态成员函数
+    thread t2(&foo::bar2, 4);
+    t2.join();
+    return 0;
+}
+```
+
+​	detach：让线程独立执行，使执行和std::thread对象分离。线程中分配的资源在线程结束后，会被销毁。
+
+​	join：阻塞当前线程，直到std::thread代表的线程执行完成。若不调用join，要确保线程执行时，所使用的外部资源的**生命周期有效性**，否则会发生异常。
+
+### 2) 转移线程所有权
+
+​	std::thread是可移动的，但是不能拷贝。可以通过move来改变线程的所有权，灵活的决定线程在什么时候join或者detach。
+
+```c++
+thread t1(f1);
+thread t3(move(t1));
+```
+
+​	将线程从t1转移给t3，这时候t1就不再拥有线程的所有权，调用t1.join()或t1.detach()会出现异常。
+
+​	这意味着thread可以作为函数的返回类型，或者作为参数传递给函数，能够更为方便的管理线程。
+
+### 3) 获取线程标识
+
+​	线程的标识类型为std::thread::id，有两种方式获得到线程的id：
+
+1. 通过thread的实例调用get_id()直接获取；
+2. 在当前线程上调用this_thread::get_id()获取。
+
+### 4) 线程暂停
+
+​	如果让线程从外部暂停会引发很多并发问题，这也是为什么std::thread没有直接提供pause函数的原因。
+
+​	如果线程在运行过程中，确实需要停顿，就可以用**this_thread::sleep_for**。
+
+## 2 C++11中的几种锁
 
 ​	本小节参考自[C++11线程中的几种锁](https://blog.csdn.net/xy_cpp/article/details/81910513)。
 
-### 1) 互斥锁Mutex
+### 1) 互斥锁std::mutex
 
-​	互斥锁是一个信号量，是一种**sleep-waiting的锁**，用于控制多个线程对共享资源互斥访问，避免多个线程在某一时刻同时操作一个共享资源。
+​	互斥锁是一种简单的加锁的方法来控制对共享资源的访问。
 
-​	在某一时刻，只有一个线程可以获取互斥锁，在释放互斥锁之前其他线程都不能获取该互斥锁。如果其他线程想要获取这个互斥锁，那么这个线程只能以**阻塞方式**进行等待。
+​	通过std::mutex可以对临界区域加锁，用于控制多个线程对共享资源互斥访问。
 
-​	当线程被阻塞，阻塞的线程被放入到**等待队列**中去，将当前核心的**时间片段**让出来，处理其他事务。
+​	在某一时刻，只有一个线程可以获取互斥锁，在释放互斥锁前其他线程无法获取该锁。如果其他线程想获取这个锁，那这个线程会被**阻塞方式**。被阻塞的线程被放入到**等待队列**中，将当前核心的**时间片段**让出来，处理其他事务。
+
+​	std::mutex提供了lock、try_lock、unlock等几个接口：
 
 ```c++
-//用互斥元保护列表
-#include <list>
-#include <mutex>
+std::mutex mtx;
+mtx.lock()
+do_something...;//共享的数据
+mtx.unlock();
+```
 
-std::list<int> some_list;
-std::mutex some_mutex;
+​	std::mutex的lock和unlock必须**成对调用**，lock后未调用unlock是非常严重的错误，会引起**死锁**。
 
-void add_to_list(int new_value)
+#### 1.1) std::lock_guard封装std::mutex
+
+​	类模板std::lock_guard，通过**RAII机制**在其作用域内占有std::mutex，当程序流程离开创建std::lock_guard对象的作用域时，std::lock_guard对象被自动销毁并释放std::mutex。
+
+​	std::lock_guard构造时还可以传入一个参数**adopt_lock**或者**defer_lock**：adopt_lock表示该锁已经被锁定，defer_lock表示该锁之后才被上锁。
+
+​	std::lock_guard最大的缺点也是简单，没有给程序员提供足够的灵活度，因此C++11定义了另一个包装类：std::unique_guard。
+
+#### 1.2) std::unique_lock封装std::mutex
+
+​	std::unique_lock和std::lock_guard类似，但它提供了更好的上锁和解锁控制，允许延迟锁定、锁定的有时限尝试、递归锁定、所有权转移和与条件变量一同使用。
+
+```c++
+std::mutex mtx; 
+
+void print_block (int n, char c) 
 {
-    std::lock_guard<std::mutex> guard(some_mutex);
-    some_list.push_back(new_value);
+    //unique_lock有多组构造函数, 这里std::defer_lock不设置锁状态
+    std::unique_lock<std::mutex> my_lock (mtx, std::defer_lock);
+    //尝试加锁, 如果加锁成功则执行
+    if(my_lock.try_lock())
+    {
+        for (int i=0; i < n; ++i)
+            std::cout << c;
+        std::cout << '\n';
+    }
 }
 ```
+
+​	std::unique_lock比std::lock_guard更灵活、功能更强大，但使用std::unique_lock需要付出更多的时间、性能成本。
 
 ### 2) 条件锁
 
@@ -2411,11 +2543,11 @@ void write_content()
 }
 ```
 
-## 2 C++ 11的原子量和内存序
+## 3 C++ 11的原子量和内存序
 
 ​	本小节参考自这里：[C++ 11的原子量和内存许浅析](https://www.cnblogs.com/FateTHarlaown/p/8919235.html)。
 
-## 3 C++锁的包装
+## 4 C++锁的包装
 
 ​	本小节参考自：[锁管理](https://juejin.cn/post/7069550372934647845)。
 
@@ -2601,7 +2733,7 @@ void fun2()
 
 ​	上锁流程：scoped_lock可以接受任意数量的mutex，并将这些mutex传给std::lock来同时上锁。它会对其中一个mutex调用 lock()，对其他调用 try_lock()，若 try_lock() 返回 false 则对已经上锁的 mutex 调用 unlock()，然后重新进行**下一轮上锁**。标准未规定下一轮的上锁顺序，可能不一致，重复此过程直到所有 mutex 上锁，从而达到同时上锁的效果。
 
-## 4 死锁
+## 5 死锁
 
 ### 1) 死锁是什么
 

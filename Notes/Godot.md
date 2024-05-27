@@ -156,7 +156,11 @@ function lerp(position, targetPosition) {
 
 ① color transform(tone mapping)
 
-​	在**WorldEnvironment**节点中，Tone Map表示如何把linear RGB转换到sRGB。Blender使用Filmic，UE4使用Aces。Tone Map参数建议：● Mode：Filmic；● White：6(4~16)，会影响背景光和模型上的光照
+​	在**WorldEnvironment**节点中，Tone Map表示如何把linear RGB转换到sRGB。
+
+​	Blender使用Filmic，UE4使用Aces。
+
+​	Tone Map参数建议：● Mode：Filmic；● White：6(4~16)，会影响背景光和模型上的光照
 
 ② white balance
 
@@ -164,21 +168,27 @@ function lerp(position, targetPosition) {
 
 ③ Lighting和exposure，设置光照和曝光
 
-​	调整DirectionalLight节点：
+​	首先，WorldEnvironment中调整ToneMap和Exposure。
+
+​	其次，调整DirectionalLight节点：
 
 ​	● 调整DirectionalLight位置和旋转，使光线和环境光贴图上的太阳光线在视觉上匹配。
 
 ​	● 调整光的强度和阴影颜色。推荐参数：Energy：2，Shadow：(153, 153, 153)
 
-​	WorldEnvironment中AmbientLight，推荐参数：Color：(128, 128, 128)，Energy：3，Sky Contribution：(0.3)。
+​	最后，WorldEnvironment中AmbientLight，推荐参数：Color：(128, 128, 128)，Energy：3，Sky Contribution：(0.3)。
 
 ### 1.2) 使用程序式环境光
 
 ​	WorldEnvironment的Background属性中，参数Background/Mode：Sky，参数Background/Sky：new Procedural Sky，得到由程序参数控制的环境光。
 
-① color transform && ② white balance，配置程序式环境光
+① color transform：同1.1)小节 
 
-​	程序式环境光可控制三个部分：Sky、Ground和Sun。
+② white balance：同1.1)小节
+
+③ 设置光照和曝光：
+
+​	首先，程序式环境光可控制三个部分：Sky、Ground和Sun。
 
 ​	Background/Sky/Sky参数建议：color：#36508d，horizon：#8bafcd，Curve：0.13。
 
@@ -186,9 +196,9 @@ function lerp(position, targetPosition) {
 
 ​	Background/Sky/Sun参数建议：Angle max：30，Energy：30。
 
-​	WorldEnvironment的Ambient属性中，调整其color和sky contribution，设置环境光对场景物体的影响。推荐参数见1.1)小节。
+​	其次，调整DirectionalLight，同1.1)小节。
 
-③ 设置光照和曝光：同1.1)小节。
+​	最后，对于WorldEnvironment的Ambient属性，调整其color和sky contribution，设置环境光对场景物体的影响。推荐参数见1.1)小节。
 
 ### 1.3) 使用shader环境光
 

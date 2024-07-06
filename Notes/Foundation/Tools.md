@@ -29,8 +29,3 @@ cl /d1 reportSingleClassLayoutClassName "absolutepath/XXX.cpp"
 切换到根目录：cd /
 
 打印当前路径：pwd
-
-
-
-
-

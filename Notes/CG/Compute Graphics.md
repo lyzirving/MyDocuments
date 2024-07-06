@@ -683,7 +683,7 @@ BVHBuildNode* BVHAccel::recursiveBuild(std::vector<Object*> objects)
 
 ## 3 坐标变换流程
 
-<img src="E:\Code\0_personal\MyDocuments\Notes\pic\cg_coordinate.png" alt="cg_coordinate" style="zoom:90%;" />
+<img src="./pic/cg_coordinate.png" alt="cg_coordinate" style="zoom:90%;" />
 
 ​	$局部坐标\stackrel{(1)模型矩阵}{\longrightarrow}世界坐标 \stackrel{(2)相机矩阵}{\longrightarrow} 视图坐标 \stackrel{(3)投影矩阵}{\longrightarrow} 裁剪坐标 \stackrel{(4)透视除法}{\longrightarrow} 标准设备空间(NDC) \stackrel{(5)视口变换}{\longrightarrow} 窗口坐标$
 

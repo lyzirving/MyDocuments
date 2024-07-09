@@ -1,5 +1,16 @@
 # VisualStudio
 
+## HotKeys
+
+- Edit.GoToAll: Ctrl + P
+- Edit.FindinFiles: Ctrl + Alt + F
+- Window.ShowEzMDIFileList: Ctrl + Alt + Down Arrow (**default**)
+- View.NavigateBackward: Ctrl + -             (**default**)
+- View.NavigateForward: Ctrl + Shift + -   (**default**)
+- Edit.WordNext: Ctrl + Right Arrow         (**default**)
+- WordPrevious: Ctrl + Left Arrow            (**default**)
+- 列编辑: Alt + Shift
+
 ## 查看类布局
 
 ​	开始菜单中打开**Developer Command Prompt for VS2022**

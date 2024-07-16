@@ -6,7 +6,89 @@ typora-root-url: pic
 
 ​	Unity在运行之中，通过反射解析用户提供的脚本，得到脚本信息，进行逻辑处理。
 
-# 快捷键
+# C#基础
+
+## 委托Delegate
+
+### 1 定义
+
+​	委托是**数据类型**，可以像定义**结构体**一样定义一个委托类型。
+
+​	委托是一种**引用类型变量**，其存有对**某个方法**的引用，且引用可在运行时被改变。
+
+```c#
+//语法
+delegate <return type> <delegate-name> <parameter list>
+//实例
+public delegate int MyDelegate (string s);
+```
+
+​	C#的委托类似**C++中指向函数的指针**。
+
+### 2 实例
+
+```c#
+using System;
+
+delegate int NumberChanger(int n);
+
+namespace DelegateAppl
+{
+   class TestDelegate
+   {
+      static int num = 10;
+      public static int AddNum(int p)
+      {
+         num += p;
+         return num;
+      }
+
+      public static int MultNum(int q)
+      {
+         num *= q;
+         return num;
+      }
+      public static int getNum()
+      {
+         return num;
+      }
+
+      static void Main(string[] args)
+      {
+         // 创建委托实例, 传入被委托的函数
+         NumberChanger nc1 = new NumberChanger(AddNum);
+         NumberChanger nc2 = new NumberChanger(MultNum);
+         // 使用委托对象调用方法
+         nc1(25);
+         nc2(5);
+      }
+   }
+}
+```
+
+### 3 多播
+
+​	委托对象可使用 “+” 运算符进行合并。
+
+​	一个合并委托调用它所合并的多个委托，只有相同类型的委托可被合并。
+
+​	"-" 运算符可用于从合并的委托中移除组件委托。
+
+```c#
+static void Main(string[] args)
+{  
+    NumberChanger nc;// 创建委托实例
+    NumberChanger nc1 = new NumberChanger(AddNum);
+    NumberChanger nc2 = new NumberChanger(MultNum);
+    nc = nc1;
+    nc += nc2;    
+    nc(5);// 调用多播
+}
+```
+
+# 工具
+
+## 快捷键
 
 - 操作工具：
 
@@ -15,6 +97,19 @@ typora-root-url: pic
 - 热键集：
 
 <img src="/hot_key.png" alt="hot_key" style="zoom:60%;" />
+
+## 标签
+
+- ContextMenu
+
+​	向编辑器添加命令：点击按钮会调用关联方法，通常用于测试。
+
+```c#
+[ContextMenu("按钮名称")]
+void TestFun()//关联的测试方法
+{ 
+}
+```
 
 # 基础知识
 
@@ -170,6 +265,8 @@ public class MyClass
 }
 ```
 
+# 重要组件
+
 ## GameObject
 
 ### 1 静态方法
@@ -233,4 +330,117 @@ obj.BroadcastMessage("TestFunc");
 //广播行为: 遍历自身/父对象的所有脚本, 找到TestFunc, 并执行
 obj.SendMessageUpwards("TestFunc");
 ```
+
+## Camera
+
+### 1 属性总览
+
+<img src="/cam_attr_0.png" alt="cam_attr_0" style="zoom:70%;" />
+
+<img src="/cam_attr_1.png" alt="cam_attr_1" style="zoom:70%;" />
+
+### 2 属性解释
+
+- Depth
+
+​	场景中多个Camera都会渲染到屏幕上，渲染的顺序通过Depth控制。
+
+​	Main Camera的Depth为-1，Depth越大，顺序越靠后。
+
+​	若两个Camera指定的Viewport一致，那么后执行的Camera，渲染内容会覆盖之前的。
+
+- Target Texture
+
+​	将Camera的渲染内容输出到指定的纹理上。
+
+- Occlusion Culling
+
+​	执行渲染前，在CPU端计算在Camera视角下的遮挡，从而不提交被遮挡的mesh，避免GPU资源的浪费。
+
+### 3 监听/委托
+
+​	Camera在特定时机/生命周期上，通过委托，实现回调：
+
+```c#
+// 在Culling前回调
+Camera.onPreCull += (cam) =>
+{
+};
+// 在渲染前回调
+Camera.onPreRender += (cam) =>
+{ 
+};
+// 在渲染后回调
+Camera.onPostRender += (cam) =>
+{
+};
+```
+
+# 核心系统
+
+## 物理系统
+
+### 1 RigidBody刚体
+
+#### 1.1 参数
+
+<img src="/rigidbody_attr_0.png" alt="rigidbody_attr_0" style="zoom:60%;" />
+
+<img src="/rigidbody_attr_1.png" alt="rigidbody_attr_1" style="zoom:60%;" />
+
+#### 1.2 碰撞产生必要条件
+
+- 碰撞的两个物体都有**碰撞器**
+
+- 其中一个物体包含**刚体**组件
+
+​	碰撞器用于描述物体的**碰撞区域**，执行**碰撞检测**；刚体用于进行**物理模拟**。
+
+#### 1.3 碰撞检测的几种模式
+
+​	离散检测是性能消耗最低，但精度最差的检测模式。
+
+​	两个刚体可能设置了不同的检测模式，下表列出了两种检测模式相遇时的组合结果。
+
+<img src="/collision_detection_modes.png" alt="collision_detection_modes" style="zoom:60%;" />
+
+### 2 Collider
+
+#### 2.1 Collider参数
+
+<img src="/collider.png" alt="collider" style="zoom:70%;" />
+
+​	其中Mesh Collider、Wheel Collider和Terrain Collider不常用。
+
+#### 2.2 碰撞检测回调
+
+​	碰撞检测在物理更新(FixedUpdate)中执行和回调：
+
+<img src="/collision_detection_cb.png" alt="collision_detection_cb" style="zoom:80%;" />
+
+### 3 物理材质
+
+<img src="/physics_material.png" alt="physics_material" style="zoom:50%;" />
+
+### 4 改变物体位置的四种方式
+
+<img src="/physics_change_pos.png" alt="physics_change_pos" style="zoom:85%;" />
+
+# 输入相关
+
+- 屏幕原点
+
+​	根据Input.mousePosition，屏幕坐标原点在窗口左下角，向右为+x，向上为+y。
+
+- 鼠标输入API
+
+Input.GetMouseButtonDown、Input.GetMouseButtonUp、Input.GetMouseButton、Input.mouseScrollDelta、Input.GetKeyDown、Input.GetKeyUp、Input.GetKey
+
+- 默认轴输入，配置在Edit/Project Settings/Input Manager/Axis中
+
+Input.GetAxis()：返回float，-1~0~1，有中间过渡值
+
+Input.GetAxisRaw()：返回-1、0、1，无渐变
+
+<img src="/default_axis.png" alt="default_axis" style="zoom:80%;" />
 

@@ -8,6 +8,53 @@ typora-root-url: pic
 
 # C#基础
 
+## getter/setter
+
+```c#
+// name属性未封装, 通过public关键字暴露给系统中的其他类
+public class person1
+{
+    public string name;
+}
+// Name属性通过get和set关键字进行了封装, 分别对应的是可读和可写
+public class person2
+{
+    public string Name{set;get;}
+}
+// ------------------------
+// person2的Name属性相当于如下, 通过Name, 类可以控制外部访问name的逻辑
+private string name;
+public string Name
+{
+    get { return name; }
+    set { name = value; }
+}
+```
+
+​	实例化person2时，系统会先分配一个叫name的private私有的内存空间。name的读与写的操作都是通过Name这个public属性，这个属性类似于函数指针，以此达到封装的目的。
+
+​	属性在调用者看来就像一个普通的变量，但作为类的设计者，**可利用属性来隐藏类中的一些字段**，使外界只能通过属性来访问你的字段，
+
+​	get/set中可添加**逻辑判断**：
+
+```c#
+class Person
+{
+    private string name;
+    public string Name
+    {
+    	get { return name; }
+    	set {
+        	name = String.IsNullOrEmpty(value) ? "null" : value;
+    	}
+	}   
+}
+```
+
+## 装箱/拆箱
+
+​	可参考：[C#装箱和拆箱](https://blog.csdn.net/qiaoquan3/article/details/51439726)，效率优化可参考：[使用泛型时避免装箱](https://www.cnblogs.com/minotauros/p/10041644.html)。
+
 ## 委托Delegate
 
 ### 1 定义
@@ -86,6 +133,33 @@ static void Main(string[] args)
 }
 ```
 
+## 泛型
+
+```c#
+// where T:IComparable是对泛型的约束, 使实际类型必须实现ICompareble接口
+public class Compare<T> where T:ICompareble 
+{
+    public static T CompareGeneric(T t1,T t2)
+    {
+        if(t1.CompareTo(t2)>0)
+        {
+            return t1;
+        } 
+        else
+        {
+        	return t2;
+        }
+    }
+}
+```
+
+​	泛型的优势：
+
+- 实现代码的重用。
+- 无需装箱和折箱。泛型类在实例化时，按照传入的类型生成**本地代码**。本地代码数据类型已确定，所以无需装箱和折箱，提升运行时间。
+
+​	更多的泛型知识，可参考：[C#泛型的理解](https://blog.csdn.net/qq_44116353/article/details/122455528)。
+
 # 工具
 
 ## 快捷键
@@ -111,6 +185,10 @@ void TestFun()//关联的测试方法
 }
 ```
 
+## 项目打包
+
+<img src="/build_settings.png" alt="build_settings" style="zoom:100%;" />
+
 # 基础知识
 
 ## 坐标系
@@ -118,6 +196,42 @@ void TestFun()//关联的测试方法
 ​	Unity使用**左手系**：屏幕向右+X(红色)，屏幕向内+Z(蓝色)，屏幕向上+Y(绿色)。
 
 <img src="/axis.png" alt="axis" style="zoom:70%;" />
+
+## 工具类
+
+### 1 Mathf
+
+```c#
+namespace UnityEngine
+{
+    //
+    // Summary:
+    //     A collection of common math functions.
+    public struct Mathf
+    {
+        //向上取整
+        public static float Ceil(float f);
+        //向下取整
+        public static float Floor(float f);
+        //四舍五入
+        public static int RoundToInt(float f);
+        //判断正负数
+        public static float Sign(float f);
+        //插值函数: 线性插值, 使用场景如下:
+        //场景一: start按先快后慢的节奏变化, 结果无限趋近于dest
+        //       start = Mathf.Left(start, dest, Time.deltaTime);      
+        //场景二: 匀速变换
+        //       time += Time.deltaTime;
+        //       result = Mathf.Lerp(start, dest, time);    
+        public static float Lerp(float a, float b, float t)
+		{
+    		return a + (b - a) * Clamp01(t);
+		}
+        ........
+        ........
+    }
+}    
+```
 
 ## GameObject和场景
 

@@ -191,11 +191,73 @@ void TestFun()//关联的测试方法
 
 # 基础知识
 
-## 坐标系
+## 图形学基础
 
-​	Unity使用**左手系**：屏幕向右+X(红色)，屏幕向内+Z(蓝色)，屏幕向上+Y(绿色)。
+### 1 向量叉乘
+
+​	下图展示了目标向量各分量计算规律：
+
+① A和B的x分量不参与目标向量的x分量计算，A和B的y分量不参与目标向量的y分量计算，A和B的z分量不参与目标向量的z分量计算。
+
+② 按顺序计算：x由y、z计算，y由z、x计算，z由x、y计算。
+
+<img src="/vector_cross.png" alt="vector_cross" style="zoom:50%;" />
+
+​	向量叉乘的几何意义：
+
+① 得到平面的法向量。
+
+② 计算两个向量的左右关系。
+
+### 2 坐标系
+
+​	OpenGL使用**右手系**：屏幕向右+X(红色)，屏幕向上+Y(绿色)，**屏幕向外**+Z(蓝色)，角度**逆时针**为正向。
+
+​	Unity使用**左手系**：屏幕向右+X(红色)，屏幕向上+Y(绿色)，**屏幕向内**+Z(蓝色)，角度**顺时针**为正向。
 
 <img src="/axis.png" alt="axis" style="zoom:70%;" />
+
+### 3 四元数
+
+#### 3.1 使用四元数的原因
+
+​	欧拉角存在缺陷：
+
+① 同一旋转的表示不唯一。
+
+② 万向节死锁。
+
+#### 3.2 四元数的构成
+
+​	四元数包含一个标量和一个3d向量：$\begin{pmatrix}w & x & y & z\end{pmatrix}$，w为标量，$\vec{v} = \begin{pmatrix}x & y & z\end{pmatrix}$为3d向量。
+
+​	通过四元数得到的欧拉角范围在[-180, 180]之间。
+
+- 单位四元数
+
+​	单位四元数表示没有旋转量，角度为0或360：[1, (0, 0, 0)]或[-1, (0, 0, 0)]；
+
+- 轴-角对
+
+​	绕着轴$\vec{n}$，旋转$\theta$弧度，可由四元数表示为：$[cos(\theta/2),\;\;sin(\theta/2)n]$，各个分量拆开，即如下：
+
+$[cos(\theta/2),\;\;sin(\theta/2)x, \;\;sin(\theta/2)y,\;\;sin(\theta/2)z]$
+
+#### 3.3 四元数相关工具
+
+- 四元数插值和转向函数
+
+​	Unity提供了Quaternion.**Lerp**和Quaternion.**Slerp**作为四元数的插值函数。Lerp比Slerp更快，但如果旋转范围越大，Lerp效果越差，一般使用Slerp。
+
+​	Unity提供了Quaternion.**LookRotation**(面朝向量)，可以得到对应朝向的旋转量。
+
+- 四元数相乘
+
+​	四元数相乘表示**旋转量的累加**：$q_{3} = q_{1} * q_{2}$。
+
+​	四元数的旋转是以**局部坐标系为参考**，因此**旋转顺序**为：先按$q_{1}$旋转，在新的局部坐标系下，按$q_{2}$旋转。
+
+​	与其对应的，以**固定/世界坐标为参考**，有旋转矩阵$M = M_{2} * M_{1}$，此时的顺序为，先转$M_{1}$，再转$M_{2}$。
 
 ## 工具类
 
@@ -231,6 +293,123 @@ namespace UnityEngine
         ........
     }
 }    
+```
+
+### 2 Vector3
+
+```c#
+public struct Vector3 : IEquatable<Vector3>, IFormattable
+{
+    //线性插值
+    public static Vector3 Lerp(Vector3 a, Vector3 b, float t);
+    //球形插值
+    public static Vector3 Slerp(Vector3 a, Vector3 b, float t);
+    ........
+}
+```
+
+<img src="/lerp&&slerp.png" alt="lerp&&slerp" style="zoom:50%;" />
+
+### 3 多线程
+
+​	Unity**支持**多线程，可使用C#中System.Threading.Thread类。
+
+​	工作线程**无法访问**Unity相关对象的内容，若在工作线程中调用相关函数，会报错。
+
+​	Unity的线程需要手动关闭。一般在脚本的**生命周期函数**中关闭线程(abort和置空)。
+
+​	Unity的线程一般用于执行复杂计算，然后使用**共享容器**读取计算结果。
+
+### 4 协程
+
+#### 4.1 协程是什么
+
+​	协同程序简称协程，它是“假”的多线程，本质是在**当前线程**上，将逻辑**分时分段执行**，从而缓解当前线程的压力。
+
+#### 4.2 Unity中使用协程
+
+- 继承MonoBehavior的类，都可以开启协程函数；
+- 声明协程函数
+
+① 返回值为IEnumerator类型及其子类；
+
+② 函数中通过yield return进行返回，yield return是Unity特有的语法糖。
+
+```c#
+//返回值必须是IEnumerator或者继承它的类型
+IEnumerator MyCoroutine(int i, string str)
+{
+    //步骤一
+    print(i);
+    //协程函数当中必须使用yield return进行返回
+    //返回
+    yield return new WaitForSeconds(5f);//返回, 等待5s后再执行后续步骤
+    //步骤二
+    print(str);
+}
+```
+
+- 开启协程函数
+
+```c#
+//StartCoroutine是MonoBehavior的方法
+Coroutine c1 = StartCoroutine(MyCoroutine(1, "123"));
+```
+
+- 关闭协程函数
+
+```c#
+//关闭所有协程函数
+StopAllCoroutines();
+
+//关闭指定协程函数
+Coroutine c1 = StartCoroutine(MyCoroutine(1, "123"));
+StopCoroutine(c1);
+```
+
+- 协程中可插入无限循环
+
+​	下述代码不会阻塞主线程，且能无限执行下去：
+
+```c#
+IEnumerator MyCoroutine(int i, string str)
+{
+    while(true)
+    {
+        print("5");
+        yield return new WaitForSeconds(5f);
+    }
+}
+```
+
+- 跳出协程
+
+```c#
+//跳出协程, 类似于StopCoroutine()
+yield break;
+```
+
+- 协程受载体的影响
+
+​	协程开启后，组件和物体销毁，协程不执行；组件失活协程执行，物体失活协程不执行。
+
+​	综上，协程唯有**组件失活时**不受影响，其它情况协程均会停止。
+
+#### 4.3 yiled return不同含义
+
+```c#
+//等待指定秒后执行, 在Update()和LateUpdate()之间执行
+yield return new WaitForSeconds(5f);
+
+//在下一帧执行, 在Update()和LateUpdate()之间执行
+yield return 1;   //任意数字
+yield return null;
+
+//等待下一个固定物理帧更新时执行, 在FixedUpdate和碰撞检测相关函数之后执行
+yield return new WaitForFixedUpdate();
+
+//等待摄像机和GUI渲染完成后执行, 在LateUpdate之后的渲染相关处理完毕后之后
+yield return new WaitForEndOfFrame();
 ```
 
 ## GameObject和场景
@@ -292,6 +471,24 @@ namespace UnityEngine
 #### 3.1) 函数列表
 
 <img src="/script_lifecycles.png" alt="script_lifecycles" style="zoom:70%;" />
+
+- FixedUpdate
+
+​	在Edit/ProjectSetting/Time/Fixed Timestep可设置物理更细间隔Time.fixedDeltaTime；
+
+​	FixedUpate**每秒**调用次数是一定的，但**每帧**调用的次数**不是一定的**，因游戏中每帧时间不一样。
+
+​	在脚本的生命周期内，FixedUpdate处有一个循环。这个循环累计物理时间，时间间隔大于0.02了，调用一次。若有很多物体进行物理更新，那么FixedUpdate的调用频率也会慢下来。
+
+- LateUpdate
+
+​	LateUpdate在**所有的**Update执行完后再执行。
+
+​	将相机更新放在LateUpdate中主要有两个原因：
+
+① 多个脚本的Update的**执行顺序不确定**；
+
+② Unity内部**动画的逻辑更新**在Update和LateUpdate之间，若把相机更新放在Update，那么场景物体的动画还没完成更新。
 
 #### 3.2) 不是MonoBehavior的成员函数
 

@@ -333,7 +333,7 @@ public struct Vector3 : IEquatable<Vector3>, IFormattable
 
 ① 返回值为IEnumerator类型及其子类；
 
-② 函数中通过yield return进行返回，yield return是Unity特有的语法糖。
+② 函数中通过yield return进行返回，yield return是C#的语法糖。
 
 ```c#
 //返回值必须是IEnumerator或者继承它的类型
@@ -412,37 +412,271 @@ yield return new WaitForFixedUpdate();
 yield return new WaitForEndOfFrame();
 ```
 
-## GameObject和场景
+#### 4.4 协程的本质
 
-- GameObject是所有场景对象的**基类**。
+​	协程可分为两部分：① 协程函数；② 协程调度器。
 
-​	场景对象本质都是GameObject，由于挂载了**不同组件**，使各对象表现不同。**脚本也是一种组件**。
+​	Unity内部实现了协程调度器，帮助我们管理协程函数。
 
-<img src="/game_object.png" alt="game_object" style="zoom:80%;" />
+- C#的迭代器结构
 
-- 场景**本质**是后缀为.unity的**配置文件**
+```c#
+namespace System.Collections
+{
+    public interface IEnumerator
+    {
+        //当前yiled return的返回值
+        object Current { get; }
+		//执行协程指令, 直到遇到yield return
+        //若返回true, 表示之后仍有指令需要执行; 若返回false, 表示之后没有指令
+        bool MoveNext();
+        void Reset();
+    }
+}
+```
 
-​	Unity通过自己的机制读场景文件，动态创建GameObject对象，并向其关联组件(脚本)，使对象在场景中各司其职。
+- 不依靠内置调度器，手动执行协程
 
-## 预设体和资源包
+```c#
+IEnumerator Test()
+{
+    print("execute 1");
+    yield return 1;
+    print("execute 2");
+    yield return 2;
+    print("execute 3");
+}
 
-- 预设体(prefab)：保存单个场景对象(GameObject)的信息，后缀为.prefab
+void Start()
+{
+    IEnumerator ie = Test();//构建协程对象
+	while(ie.MoveNext())
+	{
+    	print(ie.Current);
+	}
+}
+```
 
-​	创建预设体：将GameObject拖动到Assets目录下。
+- 自定义协程调度器
 
-​	修改预设体：
+```c#
+//自定义协程函数返回值
+public class YieldReturnTime
+{
+    public IEnumerator ie;
+    public float time; //执行时间
+}
 
-方法1. 重新拖入到Assets目录下；
+public class CoroutineMgr : MonoBehaviour
+{
+    private static CoroutineMgr instance;
+    //单例
+    public static CoroutineMgr Instance => instance;
+    //协程函数容器
+    private List<YieldReturnTime> list = new List<YieldReturnTime>();
+    
+    void Awake()
+	{
+    	instance = this;
+	}
+    
+    //启动自定义协程函数
+    public void MyStartCoroutine(IEnumerator ie)
+	{
+        if(ie.MoveNext())
+        {
+            //自定义协程返回值处理逻辑
+            if(ie.Current is int)
+            {
+                YieldReturnTime y = new YieldReturnTime();
+                y.ie = ie;
+                y.time = Time.time + (int)ie.Current;//记录下一次执行时间
+                list.Add(y);//最终将自定义的协程添加到list中
+            }
+        }
+    }
+    
+    void Update()
+    {
+    	//倒序遍历, 因为遍历时要移除元素
+        for (int i = list.Count - 1; i >= 0; i--)
+        {
+            if( list[i].time <= Time.time )//到达执行时间
+            {
+                if(list[i].ie.MoveNext())//执行协程, 且之后仍有逻辑需要执行
+                {	
+                    if(list[i].ie.Current is int)
+                    {
+                        list[i].time = Time.time + (int)list[i].ie.Current;//更新下次处理时间
+                    }
+                    else
+                    {
+                        list.RemoveAt(i);
+                    }
+                }
+                else
+                {
+                    //执行完所有协同程序, 从容器的末尾删除
+                    list.RemoveAt(i);
+                }
+            }
+        }
+    }
+}
+```
 
-方法2.在Inspector中，在GameObject的Panel下，点击Prefab/Overrides/Apply All
+## Resource资源
 
-方法3.右键，选择unpack prefab
+### 1 特殊文件夹
 
-- 资源包.unitypackage
+- 工程路径
 
-​	选择Assets中需要被复用的资源、脚本等，导出为资源包，供其他unity工程使用。
+​	由Application.dataPath获取(**$PROJECT_PATH\$\Assets**)。该变量只能在编辑模式下使用，游戏发布后失效。
 
-​	**插件**就是由资源包组成。
+- Resources资源文件夹
+
+​	Resources文件夹需要开发者自己**手动构建**，一般作为Assets的**直接子目录**，且Resources文件夹可以**存在多个**(分布在不同子目录中)。
+
+​	通过**Resources API**使用的资源都需放到Resources文件夹中；
+
+​	游戏发布后，该文件夹下所有文件都会被Unity**加密打包**，且为**只读**。
+
+- StreamingAssets
+
+​	由Application.streamingAssetsPath获取(**\$PROJECT_PATH\$/Assets/StreamingAssets**)，需要开发者**手动构建**。
+
+​	该文件夹下的文件打包出去**不会被压缩加密**，在移动平台只读，PC平台可读可写。
+
+​	该文件夹下可放入一些需自定义动态加载的初始资源。
+
+- persistentDataPath，持久数据文件夹
+
+​	由Application.persistentDataPath获取。
+
+​	不需开发者创建，所有平台可读可写。
+
+​	一般用来存取游戏中动态改变的数据或文件等。
+
+- Plugins插件文件夹
+- Editor编辑器文件夹
+
+​	需要**开发者创建**。
+
+​	开发Unity编辑器时，编辑器相关脚本放在该文件夹中。该文件夹中内容不会被打包出去。
+
+### 2 资源及其加载/释放
+
+#### 2.1 常用资源和同步加载
+
+- 预设体——GameObject
+
+​	预设体实质是GameObject的**配置文件**，后缀为.prefab。
+
+```c#
+// 加载预设体(配置文件)到内存中
+Object obj = Resources.Load("Cube");
+// 通过配置文件, 实例化对象
+Instantiate(obj);
+```
+
+- 音效资源——AudioClip
+
+```c#
+//类型转换, 保证Music/BkMusic一定是音乐资源
+AudioClip clip = Resources.Load("Music/BkMusic") as AudioClip;
+//泛型
+AudioClip clip1 = Resources.Load<AudioClip>("Music/BkMusic");
+```
+
+- 文本资源——TextAssets
+
+​	Unity支持的文本格式有：.txt、.xml、.bytes、.json、.html、.csv等等。
+
+- 图片资源——Texture
+
+```c#
+Texture tex = Resources.Load<Texture>("Image/bk");
+```
+
+- 资源缓存
+
+​	资源被加载后，就会被**缓存在内存中**，除非主动释放该资源。
+
+​	**多次**通过Resources.Load()加载**同名资源**，在第一次调用时，会将资源从磁盘加载到内存。其他时候，Load()发现资源已被缓存，便返回缓存对象。
+
+#### 2.2 异步加载
+
+- 通过事件完成异步加载
+
+```c#
+//定义内部变量
+private Texture tex;
+
+private void LoadOver( AsyncOperation rq)
+{
+    tex = (rq as ResourceRequest).asset as Texture;
+}
+
+void Start()
+{
+    //LoadAsync会开启一条线程, 进行异步加载
+    ResourceRequest rq = Resources.LoadAsync<Texture>("Tex/TestJPG");
+    //添加资源加载结束的监听
+    rq.completed += LoadOver;
+}
+```
+
+​	其中，completed的声明如下：
+
+```c#
+public event Action<AsyncOperation> completed {}
+```
+
+- 通过协程完成异步加载
+
+```c#
+private Texture tex;
+
+// 在MonoBehavior的Start()生命周期中, 启动协程
+void Start()
+{
+    StartCoroutine(Load());
+}
+
+IEnumerator Load()
+{
+    // LoadAsync会启动一个线程, 进行异步加载
+    ResourceRequest rq = Resources.LoadAsync<Texture>("Tex/TestJPG");
+    //通过yield return ResourceReuqest, Unity的协程调度知道你在异步加载资源
+    yield return rq;  
+    //判断资源是否加载结束
+    while(!rq.isDone)
+    {
+        //加载进度, 不是特别准确, 过渡不明显
+        print(rq.progress);
+        yield return null;
+    }
+    tex = rq.asset as Texture;
+}
+```
+
+#### 2.3 资源释放
+
+- 卸载未使用的资源
+
+```c#
+Resources.UnloadUnusedAssets();
+GC.Collect();
+```
+
+- 卸载指定资源
+
+```c#
+Resources.UnloadAsset(tex);
+tex = null;
+```
+
+​	注意，**GameObject**不能被如此卸载，GameObeject只能被**Destroy()**。
 
 ## 脚本
 
@@ -580,7 +814,19 @@ public class MyClass
 
 ## GameObject
 
-### 1 静态方法
+### 1 GameObject和场景
+
+- GameObject是所有场景对象的**基类**。
+
+​	场景对象本质都是GameObject，由于挂载了**不同组件**，使各对象表现不同。**脚本也是一种组件**。
+
+<img src="/game_object.png" alt="game_object" style="zoom:80%;" />
+
+- 场景**本质**是后缀为.unity的**配置文件**
+
+​	Unity通过自己的机制读场景文件，动态创建GameObject对象，并向其关联组件(脚本)，使对象在场景中各司其职。
+
+### 2 静态方法
 
 - 实例化/克隆对象
 
@@ -607,7 +853,7 @@ GameObject.DestroyImmediate(obj);
 GameObject.DontDestroyOnLoad();
 ```
 
-### 2 成员方法
+### 3 成员方法
 
 - 脚本中new一个GameObject，就会被添加到场景中
 

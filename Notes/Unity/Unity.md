@@ -678,6 +678,31 @@ tex = null;
 
 ​	注意，**GameObject**不能被如此卸载，GameObeject只能被**Destroy()**。
 
+#### 2.4 资源加载封装
+
+```c#
+public class ResourcesMgr
+{
+    private static ResourcesMgr instance  = new ResourcesMgr();
+    //单例
+    public static ResourcesMgr Instance => instance;
+
+    private ResourcesMgr()
+    {
+    }
+	//泛型方法
+    public void LoadRes<T>(string name, UnityAction<T> callBack) where T:Object
+    {
+        ResourceRequest rq = Resources.LoadAsync<T>(name);
+        rq.completed += (a) =>
+        {
+            //外部传入callback, 在完成异步加载后直接调用
+            callBack((a as ResourceRequest).asset as T);
+        };
+    }
+}
+```
+
 ## 脚本
 
 ### 1 基本操作

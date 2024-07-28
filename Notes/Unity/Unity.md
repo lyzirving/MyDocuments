@@ -507,7 +507,7 @@ public class CoroutineMgr : MonoBehaviour
                 {	
                     if(list[i].ie.Current is int)
                     {
-                        list[i].time = Time.time + (int)list[i].ie.Current;//更新下次处理时间
+                        list[i].time = Time.time + (int)list[i].ie.Current;//更新处理时间
                     }
                     else
                     {
@@ -563,6 +563,10 @@ public class CoroutineMgr : MonoBehaviour
 ​	需要**开发者创建**。
 
 ​	开发Unity编辑器时，编辑器相关脚本放在该文件夹中。该文件夹中内容不会被打包出去。
+
+- Standard Assets
+
+​	默认资源文件夹，一般Unity自带资源都放在这个文件夹下，其中的代码和资源优先被编译。
 
 ### 2 资源及其加载/释放
 
@@ -956,6 +960,186 @@ Camera.onPreRender += (cam) =>
 Camera.onPostRender += (cam) =>
 {
 };
+```
+
+## 图片和纹理
+
+### 1 图片导入
+
+#### 1.1 图片设置
+
+​	图片设置指Unity如何将图片导入为纹理，主要包括6部分：① 纹理类型；② 纹理形状；③ 高级设置；④ 平铺拉伸；⑤ 平台设置；⑥ 预览窗口。
+
+​	具体参数解释，参考texture目录下的思维导图。
+
+<img src="/texture_setting.png" alt="texture_setting" style="zoom:85%;" />
+
+#### 1.2 SpriteEditor
+
+​	SpriteEditor用于编辑2DSprite精灵图片，包含提取图集元素，设置精灵边框，设置九宫格，设置中心点等功能。如果是3D工程，需要安装2D Sprite包。
+
+##### (1) Single SpriteEditor
+
+<img src="/single_sprite_editor.png" alt="single_sprite_editor" style="zoom:80%;"/>
+
+<img src="/single_sprite_editor_1.png" alt="single_sprite_editor_1" style="zoom:60%;" />
+
+​	其有四种编辑模式：
+
+① Sprite Editor，基础图片设置，设置单张图片的基础属性；
+
+② Custom Outline，自定义精灵网格的轮廓形状，决定渲染区域，提升性能
+
+③ Custom Physics Shape，自定义精灵图片的物理形状，决定碰撞判断区域
+
+④ Secondary Textures，次要纹理设置，将其它纹理和该精灵图片关联，着色器可以得到这些辅助纹理然后用于做一些效果处理。
+
+## Renderer
+
+### 1 LineRenderer
+
+​	LineRenderer是Unity提供的画线组件。
+
+- 主要参数
+
+<img src="/line_renderer_attrs.png" alt="line_renderer_attrs" style="zoom:75%;" />
+
+- 动态生成
+
+```c#
+GameObject line = new GameObject();
+line.name = "Line";
+LineRenderer lineRenderer = line.AddComponent<LineRenderer>();
+
+//首尾相连
+lineRenderer.loop = true;
+
+//开始结束宽
+lineRenderer.startWidth = 0.02f;
+lineRenderer.endWidth = 0.02f;
+
+//开始结束颜色
+lineRenderer.startColor = Color.white;
+lineRenderer.endColor = Color.red;
+
+//设置材质
+Material m = Resources.Load<Material>("M");
+lineRenderer.material = m;
+
+//设置点, 需先设置点的个数
+lineRenderer.positionCount = 4;
+lineRenderer.SetPositions(new Vector3[] { new Vector3(0,0,0),
+                                          new Vector3(0,0,5),
+                                          new Vector3(5,0,5)});
+lineRenderer.SetPosition(3, new Vector3(5, 0, 0));
+
+//使用世界坐标系, 因此线不会跟随GameObject移动
+lineRenderer.useWorldSpace = true;
+
+//受光照影响, 进行着色器计算
+lineRenderer.generateLightingData = true;
+```
+
+## 物理系统
+
+### 1 范围检测
+
+#### 1.1 回顾碰撞
+
+- 碰撞产生的必要条件
+
+① 至少一个物体有刚体Rigidbody
+
+② 两个物体都必须有碰撞器Collider
+
+- 碰撞和触发的区别
+
+​	碰撞会产生实际的**物理效果**；
+
+​	触发不会产生物理效果，但可通过**函数监听相关事件**。
+
+#### 1.2 范围检测
+
+- 定义
+
+​	范围检测用于游戏中**瞬时的**范围判断。例如，玩家攻击，在前方1米圆形范围内对象都要受到伤害。
+
+​	范围检测的**必要条件**：待检测的对象，必须具备**碰撞器Collider**。
+
+- 范围检测API
+
+```c#
+//盒状范围检测
+Collider[] colliders = Physics.OverlapBox( Vector3.zero, Vector3.one,
+                                          Quaternion.AngleAxis(45, Vector3.up), 
+                                          1 << LayerMask.NameToLayer("UI") |
+                                          1 << LayerMask.NameToLayer("Default"),
+                                          QueryTriggerInteraction.UseGlobal);
+//遍历在盒状范围内的GameObject
+for (int i = 0; i < colliders.Length; i++)
+{
+    print(colliders[i].gameObject.name);
+}
+
+//球状范围检测
+colliders = Physics.OverlapSphere(Vector3.zero, 
+                                  5, 1 << LayerMask.NameToLayer("Default"));
+
+//胶囊体范围检测
+colliders = Physics.OverlapCapsule(Vector3.zero, Vector3.up, 1, 
+                                   1 << LayerMask.NameToLayer("UI"),
+                                   QueryTriggerInteraction.UseGlobal);
+```
+
+### 2 射线检测
+
+- 构建射线
+
+```c#
+//指定射出点和方向
+Ray r = new Ray(Vector3.right, Vector3.forward);
+```
+
+- 将屏幕像素点转换为射线
+
+```c#
+Ray r = Camera.main.ScreenPointToRay(Input.mousePosition);
+```
+
+- 射线检测API
+
+```c#
+Ray r = Camera.main.ScreenPointToRay(Input.mousePosition);
+if (Physics.Raycast(r, 1000, 1 << LayerMask.NameToLayer("Monster"), 
+                    QueryTriggerInteraction.UseGlobal))
+{
+    print("find a game object");
+}
+
+RaycastHit hitInfo;
+if( Physics.Raycast(r, out hitInfo, 1000, 1<<LayerMask.NameToLayer("Monster"), 
+                    QueryTriggerInteraction.UseGlobal) )
+{
+    print(hitInfo.collider.gameObject.name);
+    print(hitInfo.point);
+    print(hitInfo.normal);
+    print(hitInfo.transform.position);
+    print(hitInfo.distance);
+}
+
+RaycastHit[] hits = Physics.RaycastAll(r, 1000, 1 << LayerMask.NameToLayer("Monster"), 
+                                       QueryTriggerInteraction.UseGlobal);
+for (int i = 0; i < hits.Length; i++)
+{
+    print("i: " + i + ", " + hits[i].collider.gameObject.name);
+}
+```
+
+- 调试射线
+
+```c#
+Ray r = Camera.main.ScreenPointToRay(Input.mousePosition);
+Debug.DrawRay(r.origin, r.direction);
 ```
 
 # 核心系统

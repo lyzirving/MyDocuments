@@ -525,6 +525,156 @@ public class CoroutineMgr : MonoBehaviour
 }
 ```
 
+### 5 输入相关
+
+- 屏幕原点
+
+​	根据Input.mousePosition，屏幕坐标原点在窗口左下角，向右为+x，向上为+y。
+
+- 鼠标输入API
+
+Input.GetMouseButtonDown、Input.GetMouseButtonUp、Input.GetMouseButton、Input.mouseScrollDelta、Input.GetKeyDown、Input.GetKeyUp、Input.GetKey
+
+- 默认轴输入，配置在Edit/Project Settings/Input Manager/Axis中
+
+Input.GetAxis()：返回float，-1~0~1，有中间过渡值
+
+Input.GetAxisRaw()：返回-1、0、1，无渐变
+
+<img src="/default_axis.png" alt="default_axis" style="zoom:80%;" />
+
+## 脚本
+
+### 1 基本操作
+
+- 脚本**文件名**和**类名**必须一致，因为反射会通过文件名去查找类型。
+- 没有特殊需求，不用考虑命名空间。
+- 可在编辑器的路径下(Editor/Data/Resources/ScripTemplates)，修改各种脚本的默认模版。
+- 脚本和Game Object关联后，该脚本就处理该Object的逻辑。
+
+### 2 MonoBehavior类
+
+#### 2.1) 脚本默认继承自MonoBehavior
+
+- Unity**不允许**在脚本中new继承自MonoBehavior的对象，因为MonoBehavior的设计目的是挂载到GameObject对象上。
+- 继承了MonoBehavior的类，**不要覆写它的构造函数**。
+- 一个GameObject可挂载多个不同类型的脚本(实际是**Component**)，也可挂载多个相同类型的脚本。可在类上声明标记**DisallowMutipleComponent**，禁止GameObject挂载多个**同类型脚本**。
+
+#### 2.2) 未继承MonoBehavior的类
+
+- 这些类不能被挂载到GameObject上，但可以创建/覆写构造函数，需要使用new构建。
+- 这些类一般用作单例类(管理类)或数据类，遵循面向对象的编程规则。
+
+### 3 生命周期函数
+
+#### 3.1) 函数列表
+
+<img src="/script_lifecycles.png" alt="script_lifecycles" style="zoom:70%;" />
+
+- FixedUpdate
+
+​	在Edit/ProjectSetting/Time/Fixed Timestep可设置物理更细间隔Time.fixedDeltaTime；
+
+​	FixedUpate**每秒**调用次数是一定的，但**每帧**调用的次数**不是一定的**，因游戏中每帧时间不一样。
+
+​	在脚本的生命周期内，FixedUpdate处有一个循环。这个循环累计物理时间，时间间隔大于0.02了，调用一次。若有很多物体进行物理更新，那么FixedUpdate的调用频率也会慢下来。
+
+- LateUpdate
+
+​	LateUpdate在**所有的**Update执行完后再执行。
+
+​	将相机更新放在LateUpdate中主要有两个原因：
+
+① 多个脚本的Update的**执行顺序不确定**；
+
+② Unity内部**动画的逻辑更新**在Update和LateUpdate之间，若把相机更新放在Update，那么场景物体的动画还没完成更新。
+
+#### 3.2) 不是MonoBehavior的成员函数
+
+​	生命周期函数**不是MonoBehavior的成员函数**。
+
+​	它们是脚本类中首次声明、定义的函数，可以是private、protected和public。
+
+​	Unity在特定的执行时期，使用**反射**，通过**函数名**得到对应生命周期函数，并执行。
+
+#### 3.3) 函数特点
+
+- 生命周期函数在**游戏主线程**中按先后顺序执行
+
+- Awake()、OnDestroy()在脚本的生命周期中只调用一次
+- OnEnable()、OnDisnable()在脚本对象每次使能/失效时被调用
+- FixedUpdate()、Update()、LateUpdate()游戏主循环中调
+
+### 4 Inspector中可编辑变量
+
+#### 4.1) public变量默认可被编辑
+
+​	脚本中的public变量默认可在Inspector中编辑，但可通过添加标签，使其不能被编辑：
+
+```c#
+public class Test : MonoBehaviour
+{
+    [HideInInspector]
+    public int publicInt2 = 50;
+}
+```
+
+#### 4.2) private/protected变量不能被编辑
+
+​	脚本中的private/protected默认不能在Inspector中编辑，但可通过添加标签，使其被编辑：
+
+```c#
+public class Test : MonoBehaviour
+{
+    //序列化:把一个对象保存到文件或数据库
+    [SerializeField]
+    private int privateInt;
+    [SerializeField]
+    protected string protectedStr;
+}
+```
+
+#### 4.3) 少数类型不能被编辑
+
+```c#
+public enum E_TestEnum
+{
+    Normal,
+    Player,
+    Monster
+}
+
+public struct MyStruct
+{
+    public int age;
+    public bool sex;
+}
+
+public class Test : MonoBehaviour
+{
+    //可编辑类型
+    public int[] array;
+	public List<int> list;
+	public E_TestEnum type;
+	public GameObject gameObj;
+    
+    //不可编辑类型
+    public Dictionary<int, string> dic;
+    public MyStruct myStruct;//自定义类型变量
+}
+```
+
+​	自定义类型默认不能被编辑，但是添加了**序列化标签**后，可被编辑：
+
+```c#
+[System.Serializable]
+public class MyClass
+{
+    public int age;
+    public bool sex;
+}
+```
+
 ## Resource资源
 
 ### 1 特殊文件夹
@@ -707,137 +857,97 @@ public class ResourcesMgr
 }
 ```
 
-## 脚本
+## 图片和编辑
 
-### 1 基本操作
+### 1 图片导入设置
 
-- 脚本**文件名**和**类名**必须一致，因为反射会通过文件名去查找类型。
-- 没有特殊需求，不用考虑命名空间。
-- 可在编辑器的路径下(Editor/Data/Resources/ScripTemplates)，修改各种脚本的默认模版。
-- 脚本和Game Object关联后，该脚本就处理该Object的逻辑。
+​	图片设置指Unity如何将图片导入为纹理，主要包括6部分：① 纹理类型；② 纹理形状；③ 高级设置；④ 平铺拉伸；⑤ 平台设置；⑥ 预览窗口。
 
-### 2 MonoBehavior类
+​	具体参数解释，参考[1_Texture Type](./guide/1_Texture Type.xmind)、[2_Texture Shape](./guide/2_Texture Shape.xmind)、[3_Advanced](./guide/3_Advanced.xmind)、[4_Wrap Mode](./guide/4_Wrap Mode.xmind)。
 
-#### 2.1) 脚本默认继承自MonoBehavior
+<img src="/texture_setting.png" alt="texture_setting" style="zoom:85%;" />
 
-- Unity**不允许**在脚本中new继承自MonoBehavior的对象，因为MonoBehavior的设计目的是挂载到GameObject对象上。
-- 继承了MonoBehavior的类，**不要覆写它的构造函数**。
-- 一个GameObject可挂载多个不同类型的脚本(实际是**Component**)，也可挂载多个相同类型的脚本。可在类上声明标记**DisallowMutipleComponent**，禁止GameObject挂载多个**同类型脚本**。
+### 2 SpriteEditor
 
-#### 2.2) 未继承MonoBehavior的类
+​	SpriteEditor用于编辑2DSprite精灵图片，包含提取图集元素，设置精灵边框，设置九宫格，设置中心点等功能。如果是3D工程，需要安装2D Sprite包。
 
-- 这些类不能被挂载到GameObject上，但可以创建/覆写构造函数，需要使用new构建。
-- 这些类一般用作单例类(管理类)或数据类，遵循面向对象的编程规则。
+#### 2.1 Single SpriteEditor
 
-### 3 生命周期函数
+<img src="/single_sprite_editor.png" alt="single_sprite_editor" style="zoom:80%;"/>
 
-#### 3.1) 函数列表
+<img src="/single_sprite_editor_1.png" alt="single_sprite_editor_1" style="zoom:40%;" />
 
-<img src="/script_lifecycles.png" alt="script_lifecycles" style="zoom:70%;" />
+​	其有四种编辑模式：
 
-- FixedUpdate
+① Sprite Editor，基础图片设置，设置单张图片的基础属性；
 
-​	在Edit/ProjectSetting/Time/Fixed Timestep可设置物理更细间隔Time.fixedDeltaTime；
+② Custom Outline，自定义精灵网格的轮廓形状，决定渲染区域，提升性能
 
-​	FixedUpate**每秒**调用次数是一定的，但**每帧**调用的次数**不是一定的**，因游戏中每帧时间不一样。
+③ Custom Physics Shape，自定义精灵图片的物理形状，决定碰撞判断区域
 
-​	在脚本的生命周期内，FixedUpdate处有一个循环。这个循环累计物理时间，时间间隔大于0.02了，调用一次。若有很多物体进行物理更新，那么FixedUpdate的调用频率也会慢下来。
+④ Secondary Textures，次要纹理设置，将其它纹理和该精灵图片关联，着色器可以得到这些辅助纹理然后用于做一些效果处理。
 
-- LateUpdate
+#### 2.2 Mutiple SpriteEditor
 
-​	LateUpdate在**所有的**Update执行完后再执行。
+​	图片资源是图集时，需在设置时将模式设置为Multiple，从而可以使用Sprite Editor自带的功能对图集元素进行分割。
 
-​	将相机更新放在LateUpdate中主要有两个原因：
+<img src="/mutiple_sprite_editor.png" alt="mutiple_sprite_editor" style="zoom:85%;" />
 
-① 多个脚本的Update的**执行顺序不确定**；
+<img src="/mutiple_sprite_editor_eg.png" alt="mutiple_sprite_editor_eg" style="zoom:70%;" />
 
-② Unity内部**动画的逻辑更新**在Update和LateUpdate之间，若把相机更新放在Update，那么场景物体的动画还没完成更新。
+​	分割图元时，有下述几种模式：
 
-#### 3.2) 不是MonoBehavior的成员函数
+<img src="/mutiple_editor_slice.png" alt="mutiple_editor_slice" style="zoom:85%;" />
 
-​	生命周期函数**不是MonoBehavior的成员函数**。
+### 3 Sprite Mask
 
-​	它们是脚本类中首次声明、定义的函数，可以是private、protected和public。
+​	Sprite Mask对精灵图片产生遮罩，用于制作一些特殊的功能。
 
-​	Unity在特定的执行时期，使用**反射**，通过**函数名**得到对应生命周期函数，并执行。
+<img src="/sprite_mask_attrs.png" alt="sprite_mask_attrs" style="zoom:80%;" />
 
-#### 3.3) 函数特点
+### 4 Sorting Group
 
-- 生命周期函数在**游戏主线程**中按先后顺序执行
+​	SortingGroup用于对多个精灵图片分组排序。
 
-- Awake()、OnDestroy()在脚本的生命周期中只调用一次
-- OnEnable()、OnDisnable()在脚本对象每次使能/失效时被调用
-- FixedUpdate()、Update()、LateUpdate()游戏主循环中调
+​	兄弟节点将会作为一组进行排序。先排子对象，再按父对象排布。
 
-### 4 Inspector中可编辑变量
+### 5 Sprite Atlas
 
-#### 4.1) public变量默认可被编辑
+- Sprite Pakcer
 
-​	脚本中的public变量默认可在Inspector中编辑，但可通过添加标签，使其不能被编辑：
+​	Unity中自带打包图集的功能，如下：
 
-```c#
-public class Test : MonoBehaviour
-{
-    [HideInInspector]
-    public int publicInt2 = 50;
-}
-```
+<img src="/sprite_packer.png" alt="sprite_packer" style="zoom:80%;" />
 
-#### 4.2) private/protected变量不能被编辑
+​	它有如下设置：
 
-​	脚本中的private/protected默认不能在Inspector中编辑，但可通过添加标签，使其被编辑：
+Enabled For Builds：仅在构建时打包图集，在编辑模式下不会打包图集；
+
+Always Enabled：Unity在构建时打包图集；在编辑模式下运行前会打包图集。
+
+- 创建图集和图集面板
+
+​	在Resources目录下，右键/Create/2D/Sprite Atlas，即可创建自定义图集，其面板参数如下：
+
+<img src="/sprite_atlas.png" alt="sprite_atlas" style="zoom:80%;" align="left" /><img src="/sprite_atlas_attrs.png" alt="sprite_atlas_attrs" style="zoom:60%;" />
+
+- 动态加载图集
 
 ```c#
-public class Test : MonoBehaviour
-{
-    //序列化:把一个对象保存到文件或数据库
-    [SerializeField]
-    private int privateInt;
-    [SerializeField]
-    protected string protectedStr;
-}
+GameObject obj = new GameObject();
+SpriteRenderer sr = obj.AddComponent<SpriteRenderer>();
+SpriteAtlas spriteAtlas = Resources.Load<SpriteAtlas>("MyAtlas");
+//加载图集元素
+sr.sprite = spriteAtlas.GetSprite("dead1");
 ```
 
-#### 4.3) 少数类型不能被编辑
+- 使用图集的意义
 
-```c#
-public enum E_TestEnum
-{
-    Normal,
-    Player,
-    Monster
-}
+​	使用图集，主要是让多个图元一次绘制，提升性能，减少drawcall。
 
-public struct MyStruct
-{
-    public int age;
-    public bool sex;
-}
+​	可在游戏窗口/Stats面板下查看drawcall：
 
-public class Test : MonoBehaviour
-{
-    //可编辑类型
-    public int[] array;
-	public List<int> list;
-	public E_TestEnum type;
-	public GameObject gameObj;
-    
-    //不可编辑类型
-    public Dictionary<int, string> dic;
-    public MyStruct myStruct;//自定义类型变量
-}
-```
-
-​	自定义类型默认不能被编辑，但是添加了**序列化标签**后，可被编辑：
-
-```c#
-[System.Serializable]
-public class MyClass
-{
-    public int age;
-    public bool sex;
-}
-```
+<img src="/check_drawcall.png" alt="check_drawcall" style="zoom:90%;" />
 
 # 重要组件
 
@@ -962,38 +1072,6 @@ Camera.onPostRender += (cam) =>
 };
 ```
 
-## 图片和纹理
-
-### 1 图片导入
-
-#### 1.1 图片设置
-
-​	图片设置指Unity如何将图片导入为纹理，主要包括6部分：① 纹理类型；② 纹理形状；③ 高级设置；④ 平铺拉伸；⑤ 平台设置；⑥ 预览窗口。
-
-​	具体参数解释，参考texture目录下的思维导图。
-
-<img src="/texture_setting.png" alt="texture_setting" style="zoom:85%;" />
-
-#### 1.2 SpriteEditor
-
-​	SpriteEditor用于编辑2DSprite精灵图片，包含提取图集元素，设置精灵边框，设置九宫格，设置中心点等功能。如果是3D工程，需要安装2D Sprite包。
-
-##### (1) Single SpriteEditor
-
-<img src="/single_sprite_editor.png" alt="single_sprite_editor" style="zoom:80%;"/>
-
-<img src="/single_sprite_editor_1.png" alt="single_sprite_editor_1" style="zoom:60%;" />
-
-​	其有四种编辑模式：
-
-① Sprite Editor，基础图片设置，设置单张图片的基础属性；
-
-② Custom Outline，自定义精灵网格的轮廓形状，决定渲染区域，提升性能
-
-③ Custom Physics Shape，自定义精灵图片的物理形状，决定碰撞判断区域
-
-④ Secondary Textures，次要纹理设置，将其它纹理和该精灵图片关联，着色器可以得到这些辅助纹理然后用于做一些效果处理。
-
 ## Renderer
 
 ### 1 LineRenderer
@@ -1040,11 +1118,89 @@ lineRenderer.useWorldSpace = true;
 lineRenderer.generateLightingData = true;
 ```
 
+### 2 SpriteRenderer
+
+​	Sprite Renderer是精灵渲染器，是2D开发的重要组件。
+
+- 属性参数
+
+​		属性参数详解参考[5_SpriteRenderer](./guide/5_Sprite Renderer.xmind)。
+
+<img src="/sprite_renderer.png" alt="sprite_renderer" style="zoom:100%;" />
+
+​	其中，较为重要的属性为Draw Mode：
+
+<img src="/sprite_renderer_draw_mode.png" alt="sprite_renderer_draw_mode" style="zoom:70%;" />
+
+- 动态使用
+
+```c#
+GameObject obj = new GameObject();
+SpriteRenderer sr = obj.AddComponent<SpriteRenderer>();
+//动态加载图片
+sr.sprite = Resources.Load<Sprite>("dead1");
+//动态加载图集元素
+Sprite[] sprs = Resources.LoadAll<Sprite>("RobotBoyIdleSprite");
+sr.sprite = sprs[10];
+```
+
+# 核心系统
+
 ## 物理系统
 
-### 1 范围检测
+### 1 3D物理
 
-#### 1.1 回顾碰撞
+#### 1.1 RigidBody刚体
+
+##### (1) 参数
+
+<img src="/rigidbody_attr_0.png" alt="rigidbody_attr_0" style="zoom:60%;" />
+
+<img src="/rigidbody_attr_1.png" alt="rigidbody_attr_1" style="zoom:60%;" />
+
+##### (2) 碰撞产生必要条件
+
+- 碰撞的两个物体都有**碰撞器**
+
+- 其中一个物体包含**刚体**组件
+
+​	碰撞器用于描述物体的**碰撞区域**，执行**碰撞检测**；刚体用于进行**物理模拟**。
+
+##### (3) 碰撞检测的几种模式
+
+​	离散检测是性能消耗最低，但精度最差的检测模式。
+
+​	两个刚体可能设置了不同的检测模式，下表列出了两种检测模式相遇时的组合结果。
+
+<img src="/collision_detection_modes.png" alt="collision_detection_modes" style="zoom:60%;" />
+
+#### 1.2 Collider
+
+##### (1) Collider参数
+
+<img src="/collider.png" alt="collider" style="zoom:70%;" />
+
+​	其中Mesh Collider、Wheel Collider和Terrain Collider不常用。
+
+##### (2) 碰撞检测回调
+
+​	碰撞检测在物理更新(FixedUpdate)中执行和回调：
+
+<img src="/collision_detection_cb.png" alt="collision_detection_cb" style="zoom:80%;" />
+
+#### 1.3 物理材质
+
+<img src="/physics_material.png" alt="physics_material" style="zoom:50%;" />
+
+#### 1.4 改变物体位置的四种方式
+
+<img src="/physics_change_pos.png" alt="physics_change_pos" style="zoom:85%;" />
+
+### 2 物理检测
+
+#### 2.1 范围检测
+
+##### (1) 回顾碰撞
 
 - 碰撞产生的必要条件
 
@@ -1058,7 +1214,7 @@ lineRenderer.generateLightingData = true;
 
 ​	触发不会产生物理效果，但可通过**函数监听相关事件**。
 
-#### 1.2 范围检测
+##### (2) 范围检测
 
 - 定义
 
@@ -1091,7 +1247,7 @@ colliders = Physics.OverlapCapsule(Vector3.zero, Vector3.up, 1,
                                    QueryTriggerInteraction.UseGlobal);
 ```
 
-### 2 射线检测
+#### 2.2 射线检测
 
 - 构建射线
 
@@ -1142,71 +1298,34 @@ Ray r = Camera.main.ScreenPointToRay(Input.mousePosition);
 Debug.DrawRay(r.origin, r.direction);
 ```
 
-# 核心系统
+### 3 2D物理
 
-## 物理系统
+#### 3.1 RigidBody2D
 
-### 1 RigidBody刚体
+​	RigidBody2D和RigidBody本质是一样的，区别在于对象只会在XY平面中移动，在垂直于该平面的轴上旋转。
 
-#### 1.1 参数
+- 不同类型的刚体
 
-<img src="/rigidbody_attr_0.png" alt="rigidbody_attr_0" style="zoom:60%;" />
+​	Dynamic动态刚体：受力的作用，会碰撞，碰撞后要因物理作用而运动；
 
-<img src="/rigidbody_attr_1.png" alt="rigidbody_attr_1" style="zoom:60%;" />
+​	Kinematic运动学刚体：对象只能通过API进行移动，不受力的作用，但会进行碰撞检测；
 
-#### 1.2 碰撞产生必要条件
+​	Static静态刚体：不会运动，不受力作用，但是要进行碰撞检测。
 
-- 碰撞的两个物体都有**碰撞器**
+- 面板参数
 
-- 其中一个物体包含**刚体**组件
+​	参考[6_RigidBody2D Attrs](./guide/6_RigidBody2D Attrs.xmind)。
 
-​	碰撞器用于描述物体的**碰撞区域**，执行**碰撞检测**；刚体用于进行**物理模拟**。
+- 动态使用
 
-#### 1.3 碰撞检测的几种模式
+```c#
+Rigidbody2D rigid = this.GetComponent<Rigidbody2D>();
+rigid.AddForce(new Vector2(0, 100));//加力
+rigid.velocity = new Vector2(1, 0);//速度
+```
 
-​	离散检测是性能消耗最低，但精度最差的检测模式。
+#### 3.2 2D物理材质
 
-​	两个刚体可能设置了不同的检测模式，下表列出了两种检测模式相遇时的组合结果。
+​	物理材质决定物体产生碰撞时的摩擦和弹性表现。
 
-<img src="/collision_detection_modes.png" alt="collision_detection_modes" style="zoom:60%;" />
-
-### 2 Collider
-
-#### 2.1 Collider参数
-
-<img src="/collider.png" alt="collider" style="zoom:70%;" />
-
-​	其中Mesh Collider、Wheel Collider和Terrain Collider不常用。
-
-#### 2.2 碰撞检测回调
-
-​	碰撞检测在物理更新(FixedUpdate)中执行和回调：
-
-<img src="/collision_detection_cb.png" alt="collision_detection_cb" style="zoom:80%;" />
-
-### 3 物理材质
-
-<img src="/physics_material.png" alt="physics_material" style="zoom:50%;" />
-
-### 4 改变物体位置的四种方式
-
-<img src="/physics_change_pos.png" alt="physics_change_pos" style="zoom:85%;" />
-
-# 输入相关
-
-- 屏幕原点
-
-​	根据Input.mousePosition，屏幕坐标原点在窗口左下角，向右为+x，向上为+y。
-
-- 鼠标输入API
-
-Input.GetMouseButtonDown、Input.GetMouseButtonUp、Input.GetMouseButton、Input.mouseScrollDelta、Input.GetKeyDown、Input.GetKeyUp、Input.GetKey
-
-- 默认轴输入，配置在Edit/Project Settings/Input Manager/Axis中
-
-Input.GetAxis()：返回float，-1~0~1，有中间过渡值
-
-Input.GetAxisRaw()：返回-1、0、1，无渐变
-
-<img src="/default_axis.png" alt="default_axis" style="zoom:80%;" />
-
+<img src="/physics_material_2d.png" alt="physics_material_2d" style="zoom:60%;" />

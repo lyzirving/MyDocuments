@@ -1146,6 +1146,56 @@ sr.sprite = sprs[10];
 
 # 核心系统
 
+## TileMap
+
+### 1 编辑瓦片地图
+
+- 打开Tile Palette瓦片调色板，并创建一个Palette，准备构建TileMap。
+
+​	创建TilePalette的面板参数，可参考[7_Tile_Palette_Tool_Attrs](./guide/7_Tile_Palette_Tool_Attrs.xmind)。
+
+<img src="/tile_palette.png" alt="tile_palette" style="zoom:75%;" />
+
+- 在窗口中拖入Sprite，作为瓦片资源
+
+<img src="/palette_tiles.png" alt="palette_tiles" style="zoom:100%;" />
+
+- 在场景中构建TileMap，开始编辑
+
+<img src="/scene_tile_map.png" alt="scene_tile_map" style="zoom:70%;" />
+
+- TileMap面板参数
+
+​	TileMap由一对父子GameObject组成，父节点带Grid组件，子节点带Tilemap和Tilemap Renderer两个组件。可为子节点添加Tilemap Collider 2D组件。
+
+![tilemap_structure](/tilemap_structure.png)
+
+​	几个组件的面板参数如下：
+
+<img src="/grid_comp.png" alt="grid_comp" style="zoom:80%;" />
+
+<img src="/tilemap_comp.png" alt="tilemap_comp" style="zoom:80%;" />
+
+<img src="/tilerenderer_comp.png" alt="tilerenderer_comp" style="zoom:80%;" />
+
+### 2 设置等距瓦片地图
+
+​	伪Z轴的横版地图，实际是让Y轴冒充Z轴，同时UI资源要配合这种视觉模式。
+
+- 在project settings中设置sort axis为如下
+
+<img src="/isometric_setting.png" alt="isometric_setting" style="zoom:80%;" />
+
+- 切换Tilemap的渲染模式
+
+<img src="/isometric_setting_1.png" alt="isometric_setting_1" style="zoom:80%;" />
+
+- 排序
+
+​	等距瓦片排序可使用轴心排序和图层排序。轴心排序需要编辑单个Sprite的轴心点。
+
+​	通过排序可解决一些2D的遮挡问题。
+
 ## 物理系统
 
 ### 1 3D物理

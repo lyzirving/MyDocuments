@@ -1196,6 +1196,38 @@ sr.sprite = sprs[10];
 
 ​	通过排序可解决一些2D的遮挡问题。
 
+### 3 代码控制
+
+- 相关类
+
+​	TileBase：瓦片资源对象基类；
+
+​	Tilemap：用于管理瓦片地图；
+
+​	Grid：用于坐标转换。
+
+- 相关API
+
+```c#
+//清空瓦片地图
+map.ClearAllTiles();
+
+//获取指定位置的瓦片
+TileBase tmp = map.GetTile(Vector3Int.zero);
+
+//设置瓦片
+map.SetTile(new Vector3Int(0, 2, 0), tileBase);
+
+//删除瓦片
+map.SetTile(new Vector3Int(1, 0, 0), null);
+
+//替换瓦片
+map.SwapTile(tmp, tileBase);
+
+//世界坐标转格子坐标
+grid.WorldToCell()
+```
+
 ## 物理系统
 
 ### 1 3D物理
@@ -1379,3 +1411,91 @@ rigid.velocity = new Vector2(1, 0);//速度
 ​	物理材质决定物体产生碰撞时的摩擦和弹性表现。
 
 <img src="/physics_material_2d.png" alt="physics_material_2d" style="zoom:60%;" />
+
+## 动画系统
+
+### 1 创建动画
+
+​	① 打开Animation面板；② 在场景中选中需要动画的GameOject；③ 点击面板中的Create。
+
+<img src="/create_animation.png" alt="create_animation" style="zoom:50%;" />
+
+​	创建动画后，Unity会做下述几件事情：
+
+① 创建Animation Controller，并将动画文件添加到Animation Controller中；
+
+② 为GameObject添加Animator组件；
+
+③ 关联Animation Controller至Animator。
+
+<img src="/anim_panel.png" alt="anim_panel" style="zoom:100%;" />
+
+​	动画面板的参数可参考：[8_Animation_Attrs](./guide/8_Animation_Attrs.xmind)。
+
+### 2 状态控制
+
+- Animator面板属性
+
+<img src="/animator_panel_params.png" alt="animator_panel_params" style="zoom:50%;" />
+
+- Animator Controller内部属性
+
+<img src="/anim_control_params_1.png" alt="anim_control_params" style="zoom:90%;" />
+
+<img src="/anim_control_params_2.png" alt="anim_control_params" style="zoom:90%;" />
+
+- 设置动画切换条件
+
+<img src="/anim_controller_1.png" alt="anim_controller" style="zoom:70%;" />
+
+<img src="/anim_controller_2.png" alt="anim_controller" style="zoom:70%;" />
+
+- 动态切换状态
+
+​	在Animator Controller中设置好状态变量后，可通过实时修改状态变量的值，改变状态机的状态。
+
+```c#
+Animator animator;
+// Start is called before the first frame update
+void Start()
+{      
+    animator = GetComponent<Animator>();
+    
+    //直接播放动画, 一般不使用
+	//animator.Play("状态名");
+    
+    //设置条件变量的值
+    //animator.SetFloat("条件名", 1.2f);
+	//animator.SetInteger("条件名", 5);
+	//animator.SetBool("条件名", true);
+	//animator.SetTrigger("条件名");
+	
+    //获取条件变量的值
+	//animator.GetFloat("条件名");
+	//animator.GetInteger("条件名");
+	//animator.GetBool("条件名");
+}
+
+// Update is called once per frame
+void Update()
+{
+    if (Input.GetKeyDown(KeyCode.A))
+    {
+        animator.SetBool("bMove", true);
+    }
+
+    if (Input.GetKeyDown(KeyCode.S))
+    {
+        animator.SetBool("bRotate", true);
+    }
+
+    if (Input.GetKeyDown(KeyCode.D))
+    {
+        animator.SetBool("bMove", false);
+        animator.SetBool("bRotate", false);
+    }
+}
+```
+
+
+

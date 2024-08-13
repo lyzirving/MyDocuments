@@ -1497,5 +1497,272 @@ void Update()
 }
 ```
 
+### 3 序列帧动画
+
+- 两种方法创建序列帧动画
+
+一是，为GameObject创建动画，将序列图片拖入动画窗口中。
+
+二是，把序列图片直接拖入到Hierarchy窗口面板中，此时Unity会自动生成一个挂载了Animator组件的GameObject，其中的Controller包含一个有序列帧的anim。
+
+### 4 骨骼动画
+
+#### 4.1 2D骨骼动画
+
+​	编辑2D骨骼动画，可使用Unity内置的2D Animation或第三方软件Spine。
+
+##### 4.1.1 2D Animation图片骨骼
+
+​	2D Animation是Unity内置的2D骨骼编辑器，需使用PackageManager安装。
+
+- 编辑骨骼
+
+​	通常，需在图片底部创建**根骨骼**，然后依次创建子对象。完成骨骼编辑(有父子关系的骨骼**不一定首尾相连**)后，进行自动蒙皮和刷权重。
+
+​	蒙皮后，可在**Bone Influence**选项中进行检查，看对应图片区域是否和正确的骨骼关联。若没有，可添加/删除相应的骨骼。
+
+​	最后，**进行检查**：控制每个骨骼，看其姿态变化后，是否正确影响相关区域。
+
+<img src="/skinning_editor.png" alt="skinning_editor" style="zoom:100%;" />
+
+- 使用骨骼动画
+
+​	① 将带骨骼的图片拖入到scene hierarchy中，添加组件**Sprite Skin**，在面板中点击**Create Bones**。
+
+​	② Unity会按骨骼的**父子关系**，为每个骨骼生成节点。此时，每个骨骼就可以被编辑了。
+
+​	③ 为Game Object添加Animator组件，在动画面板中生成animation，编辑各个骨骼的属性，完成动画。
+
+<img src="/sprite_skin.png" alt="sprite_skin" style="zoom:90%;" />
+
+##### 4.1.2 2D Animation图集骨骼
+
+- 编辑步骤
+
+① 导入图集，进行切片(自动切片，调整外部轮廓)，分割图集中的每张图片。
+
+② 双击要编辑的单张图片，依次编辑骨骼、蒙皮、刷权重。
+
+③ 注意，每张图片内部的骨骼存在父子关系，图片间的骨骼无父子关系。
+
+④ 为Game Object添加Sprite Skin组件，手动调整、确定各个图片之间的父子关系。
+
+- 编辑psb
+
+​	psb、psd都是PS的格式，Unity建议使用psb。使用psb需要导入包2d psd importer。
+
+​	导入Unity中的psb实际也是图集。
+
+​	psb内包含了PS中的编辑信息，如层级关系。导入到Unity中后，这些编辑信息仍然有效。
+
+##### 4.1.3 2D IK
+
+​	骨骼动画由正向动力学完成：**子骨骼姿态受父骨骼影响**。
+
+​	IK(Inverse Kinematics)反向动力学：子骨骼的姿态变化带动父骨骼变化。
+
+###### (1) 使用IK
+
+- 在叶子骨骼的创建空对象，作为该位置**IK容器**，并将该容器摆放至骨骼的末端：
+
+<img src="/ik_create_empty.png" alt="ik_create_empty" style="zoom:50%;" />
+
+- 添加IK Manager组件
+
+​	为GameObject添加IK Manager组件，并添加IK的解算器，如下：
+
+​	CCD：可自定义影响N个关节点，不能反向。
+
+​	FABRIK：可自定义影响N个关节点，能反向。
+
+​	Limb：只会影响三个节点。
+
+<img src="/ik_solvers.png" alt="ik_solvers" style="zoom:67%;" />
+
+- 使用解算器
+
+① 添加解算器后，GameObject会生成一个**直接子对象**作为解算器。
+
+② 为解算器关联一个**叶子节点**，作为解算器的应用对象(**effector**)。解算器和effector是一对一关系。
+
+③ 设置解算器的面板参数。
+
+④ 改变该叶子对象的姿态，解算器会按设置的参数进行实时计算，将改变应用到effector的父对象上。
+
+<img src="/ik_solver_panel.png" alt="ik_solver_panel" style="zoom:100%;" />
+
+​	如上图所示，拖动LeftHandIK节点，就可带动关联的另外两个父节点变化。
+
+​	IK可在Animation面板中制作动画发挥重要作用。
+
+###### (2) 动态控制IK点位置
+
+​	下述实现了IK节点的位置随鼠标变化的功能：
+
+```c#
+//关联的IK节点, 如LeftHandIK
+public Transform ikPoint;
+
+private float z;
+private Vector3 mousePos;
+
+void Start()
+{
+    //得到ik节点在屏幕上的z轴位置, 用于后续计算
+    z = Camera.main.WorldToScreenPoint(ikPoint.position).z;
+}
+
+void Update()
+{
+    if ( Input.GetMouseButton(0) )
+    {
+        mousePos = Input.mousePosition;
+        mousePos.z = z;
+        //IK节点的位置随鼠标变化
+        ikPoint.position = Camera.main.ScreenToWorldPoint(mousePos);
+    }
+}
+```
+
+##### 4.1.4 2D换装——资源在同一文件
+
+​	在psb资源中，同一位置上不同的装备都会被隐藏起来。使用2D psd Importer导入psb资源时，需要勾选**Include Hidden Layers**。
+
+- 导入psb，生成/编辑骨骼
+
+​	psb实际为图集，为图集的单张图片生成/编辑骨骼，可参考前述笔记。
+
+- 为可换装部位添加类别Category
+
+​	在右侧面板的Sprite标签下，为可换装的部分添加类别。
+
+​	其会生成Sprite Library组件、Sprite Resolver组件和Sprite Library Assets资源来完成换装。
+
+​	注意，**本地Unity(2022.3.34)中没有看到类别**。在Unity2021.1中就已经移除了这种换装方式，需要通过手动创建Sprite Library Asset实现，参考[Skinning Editor : Sprite Categories and Labels Not Appearing](https://discussions.unity.com/t/skinning-editor-sprite-categories-and-labels-not-appearing/837608/2)。
+
+##### 4.1.5 2D换装——资源在不同文件
+
+- 在不同文件中制作psb换装资源
+
+① 保证各个部位在不同PS文件中位置统一；
+
+② 基础部位可选择性隐藏，比如装备文件，可隐藏基础部分。
+
+- 不同文件资源的骨骼信息必须统一
+
+​	首先编辑**基础装备资源**，使用**复制**的方式拷贝骨骼信息到其他资源文件中：
+
+① 点击预览；② 点击Copy Rig。
+
+<img src="/rig_copy_preview.png" alt="rig_copy_preview" style="zoom:60%;" align="left" /><img src="/rig_copy_click.png" alt="rig_copy_click" style="zoom:70%;" /><img src="/rig_paste.png" alt="rig_paste" style="zoom:60%;" />
+
+​	打开另一个资源文件，在预览模式下点击Paste Rig，勾选Bones，完成骨骼信息的复制。
+
+​	综上，两个资源的骨骼信息是完全一致的。之后，为**另一个资源蒙皮、调整权重**。
+
+- 手动添加组件和数据文件
+
+① 创建SpriteLibraryAsset数据文件，手动添加类型分组、Label，并关联图片资源；
+
+② 为GameObject添加SpriteLibrary组件，并关联前述创建的Asset；
+
+③ 为GameObject的子对象(各个部位)添加SpriteResolver，关联换装逻辑。
+
+#### 4.2 导入3D模型
+
+​	Unity支持多种模型格式，官方建议使用**fbx**，且注意模型本地坐标和Unity坐标一致。
+
+##### 4.2.1 Model页签
+
+​	面板参数见[9_Import_Model_Page](./guide/9_Import_Model_Page.xmind)。
+
+##### 4.2.2 Rig页签
+
+​	Rig页签主要用于设置骨骼和模型的映射以及替身系统。
+
+- 概念解析
+
+​	**Animation Type**：人形模型、通用模型。
+
+​	**Avatar Definition**：① 根据当前模型创建替身；② 使用另一个模型上的替身。
+
+​	**替身系统**：Unity内置了标准人形骨骼。建立导入的模型中的骨骼和标准人形骨骼的映射关系，即配置替身系统。
+
+- 面板参数
+
+​	面板参数见[10_Import_Rig_Page](./guide/10_Import_Rig_Page.xmind)。
+
+##### 4.2.3 动画页签
+
+​	UI在制作模型和动画时，尽量**分别**将它们导出。
+
+​	动画剪辑(**Clip**)是Unity动画的**最小构成元素**，代表一个单独的动作。
+
+- 动画基础信息设置——[11_Animation_basic_info](./guide/11_Animation_basic_info.xmind)
+- 动画剪辑属性基本设置——[12_Animation_Clip_Attrs](./guide/12_Animation_Clip_Attrs.xmind)
+- 动画剪辑属性其他设置——[13_Animation_Clip_Other](./guide/13_Animation_Clip_Other.xmind)
+- 动画预览窗口
+
+<img src="/anim_preview.png" alt="anim_preview" style="zoom:60%;" />
+
+#### 4.3 使用3D模型
+
+##### 4.3.1 播放模型动画
+
+① 将模型拖入到场景中；
+
+② 为GameObject添加Animator组件；
+
+​	如勾选Apply Root Motion，若动画中存在位移，那么会应用到整个GameObject上。
+
+<img src="/anim_apply_root_motion.png" alt="anim_apply_root_motion" style="zoom:80%;" />
+
+③ 创建Animator Controller，并设置给Animator组件；
+
+④ 将想要使用的相关动作(**Animation Clip**)拖入至Animator Controller中；
+
+⑤ 在Animator Controller中编辑动画间的切换关系。
+
+<img src="/anim_controller_3.png" alt="anim_controller_3" style="zoom:60%;" />
+
+⑥ 代码控制状态切换，从而播放动画。
+
+##### 4.3.2 设置状态参数
+
+​	如上图选中HumanoidIdle后，在右侧出现如下参数面板。
+
+<img src="/anim_state_params.png" alt="anim_state_params" style="zoom:80%;" />
+
+​	上述参数详细可参考[14_3D_Anim_Params](./guide/14_3D_Anim_Params.xmind)。
+
+##### 4.3.3 动画过渡设置
+
+​	在Animation Controller中，选中两个状态之间的连线时，右侧就会弹出动画过渡设置。
+
+<img src="/anim_transform.png" alt="anim_transform" style="zoom:70%;" />
+
+​	面板上的参数详细可参考[14_3D_Anim_Params](./guide/14_3D_Anim_Params.xmind)。
+
+​	有两个参数需要注意：
+
+- Has Exit Time：如果希望瞬间切换动画，不需过多等待，取消该选项。
+- Can Transition To self：指出线在Any State -> Target State的情况，如果希望不要重复打断Target State，取消该选项。
+
+
+
+
+
+​	
+
+
+
+
+
+
+
+
+
+
+
 
 

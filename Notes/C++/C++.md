@@ -700,6 +700,62 @@ D d;    //8
 
 ​	编译器为空壳类分安插了1一个字节，得以分配地址。
 
+### 7) 空类默认生成的六个函数
+
+​	C++类的六个默认生成函数：
+
+① 默认缺省构造函数 ② 默认缺省析构函数 ③ 默认拷贝构造函数 ④ 默认赋值运算符重载
+
+⑤ 默认取地址运算符重载函数 ⑥ 默认const修饰的取地址运算符重载函数
+
+​	如下所示：
+
+```c++
+//声明一个什么都没有的空类
+class Empty{};
+//c++默认会为该类生成以下六个成员
+class Empty{
+    Empty();
+    ~Empty();
+    Empty(const Empty&);
+    Empty operator=(const Empty&);
+ 
+    Empty* operator&();
+    const Empty* operator&()const;
+};
+```
+
+### 8) 默认移动构造函数
+
+- 默认移动构造生成时机
+
+​	在没有自定义移动构造函数/移动赋值函数的情况下，如果该类自定义了**拷贝构造函数**/**赋值运算符**或**析构函数**之一，都只会调用拷贝构造函数/赋值运算符。且此时，**不会**生成默认的移动构造。
+
+​	注意，即使没有自定义拷贝构造函数/赋值运算符，**只自定义了析构函数**，也**不会**生成默认移动构造。这是因为自定义析构函数表明该类在析构时**可能需要回收内存**，如果生成了默认移动构造，可能会出错。
+
+- 默认移动构造的实现
+
+```c++
+class A
+{
+public:
+	int *p = new int;
+	string str = "Hello";//成员存在移动构造函数
+};
+ 
+int main()
+{
+	A a;
+	A b(std::move(a));  //使用默认移动构造函数构造
+	cout << a.p << " " << a.str << " "<<endl; //0xfb2650
+	cout << b.p << " "<< b.str << " "<<endl;  //0xfb2650 Hello
+}
+```
+
+​	如上所示，在a的资源转移给b后，a.p没有变成null_ptr，a.str变成了空串。
+
+​	因为默认移动构造函数对int*类型成员只进行简单复制，对于string类型成员调用了其默认移动构造函数进行真正的移动。
+
 ## 4 字节对齐
 
 ### 1) 自然对界alignment
@@ -1514,6 +1570,56 @@ auto multiply(_Tx x, _Ty y)->decltype(x*y)
 
 ​	当weak_ptr、shared_ptr自身或相互赋值时，它们共享同一个管理对象指针。
 
+### 3) weak_ptr的几个应用场景
+
+- 解决循环引用
+
+​	如下所示，A中有B，B中有A时，使用weak_ptr：
+
+```c++
+class B; // 前置声明类B
+class A
+{
+public:
+	A() { cout << "A()" << endl; }
+	~A() { cout << "~A()" << endl; }
+	weak_ptr<B> _ptrb;
+};
+class B
+{
+public:
+	B() { cout << "B()" << endl; }
+	~B() { cout << "~B()" << endl; }
+	weak_ptr<A> _ptra;
+};
+```
+
+- 弱回调——线程安全的对象
+
+```c++
+// 通过弱智能指针观察强智能指针
+void threadProc(weak_ptr<Test> pw)
+{
+	std::this_thread::sleep_for(std::chrono::seconds(2));
+	shared_ptr<Test> ps = pw.lock();
+	if (ps != nullptr)
+	{
+		ps->show();
+	}
+}
+
+int main()
+{
+	// 在堆上定义共享对象
+	shared_ptr<Test> p(new Test);
+	// 使用C++11的线程，开启一个新线程，并传入共享对象的弱智能指针
+	std::thread t1(threadProc, weak_ptr<Test>(p));
+	//t1.join();
+    t1.detach();
+	return 0;
+}
+```
+
 ## 8 NULL和nullptr区别(C++11)
 
 ### 1) C语言中的NULL
@@ -1983,6 +2089,17 @@ struct _Vector_impl : public _Tp_alloc_type {
 ​	读取数组数据时，连续的数组成员会被加载到同一个缓存行中，因此不需要多次读取。
 
 ​	读取链表时，由于链表元素的地址是离散的，因此在处理多个元素时，可能需要**加载多个缓存行**。
+
+### 6) 理解emplace_back的优势
+
+​	通常使用push_back()向容器中加入一个元素时，首先会调用**构造函数**构造这个临时对象，然后调用**拷贝构造函数**将这个临时对象放入容器中，最后**释放临时变量**。因此浪费了申请临时变量的资源。
+
+​	C++11引入右值引用后，emplace_back就对上述情况进行了优化：
+
+- 传入对象构造参数时，emplace_back内部使用完美转发，在构造对象时使用placement new，调用构造函数，原地构造，减少push_back的临时对象构造和析构过程。
+
+- 传入左值对象，empalce_back内部使用完美转发，在构造对象时调用拷贝构造函数进行构造并存入容器中。
+- 传入右值对象(使用std::move())，emplace_back内部使用完美转发，在构造对象时调用移动构造函数并存入容器中。若没有移动构造，则调用拷贝构造创建对象并存入容器中。
 
 ## 3 空间配置器
 

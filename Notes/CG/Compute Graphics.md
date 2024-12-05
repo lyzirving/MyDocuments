@@ -98,7 +98,7 @@ $Dynamic Range = Log_{10}(Max/Min)$
 
 ### 1) 法线和平面点确定平面
 
-​	平面方程中，$(A,B,C)$是平面的方向向量。
+​	平面方程中，$(A,B,C)$是平面的方向向量(法线)。
 
 ​	现有平面上任意点O$(x_{o},y_{o},z_{o})$，代入平面方程有：$D = -(Ax_{o} + By_{o} + Cz{o})$
 
@@ -219,7 +219,7 @@ $\vec{PO}= O - P$;
 
 $dot = \vec{PO}\cdot\vec{Ray}$
 
-$D = P + dot*\vec{Ray}$
+$D = P + dot*\vec{Ray} * |\vec{PO}|$
 
 ### 2) 点到射线的距离
 
@@ -575,7 +575,7 @@ BVHBuildNode* BVHAccel::recursiveBuild(std::vector<Object*> objects)
 
 <img src="./pic/cg_pipeline_1.png" alt="cg_pipeline_1" style="zoom:80%;" />
 
-​	应用阶段通常是在CPU端进行处理，包括碰撞检测、动画物理模拟以及视椎体剔除等任务，这个阶段会将数据送到渲染管线中；
+​	应用阶段通常是在CPU端进行处理，包括碰撞检测、动画、物理模拟以及视椎体剔除等任务，这个阶段会将数据送到渲染管线中；
 
 ​	顶点着色器、投影变换、曲线细分、几何着色器、图元装配、裁剪、屏幕映射；
 

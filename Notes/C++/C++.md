@@ -2266,9 +2266,72 @@ std::vector<int, my_alloc::allocator<int> > v;
 
 ​	备份且返回旧值的运算，或须进行**复杂的迭代器对象构建和复制**，造成性能影响。
 
-## 7 std::string的内存共享和写时复制优化
+## 7 std::string的内存共享/写时拷贝
 
 ​	本小节参考自：[std::string的内存共享和Copy-On-Write](https://blog.csdn.net/Li_Ning_/article/details/51348830)。
+
+​	string类中必有私有成员：**char***，记录从**堆上**分配内存的地址，其在构造时分配内存，在析构时释放内存。
+
+​	因为是从堆上分配内存，string在维护这块内存时格外小心：s在返回这块内存地址时，返回只读的**const char***。
+
+​	若要写这块内存，只能通过string提供的方法对数据进行改写。
+
+- 共享内存
+
+​	有如下示例：
+
+```c++
+string str1 = "hello world";
+string str2 = str1;
+string str3 = str2;
+printf ("\tstr1 的地址: %x\n", (unsigned int)str1.c_str() );
+printf ("\tstr2 的地址: %x\n", (unsigned int)str2.c_str() );
+printf ("\tstr3 的地址: %x\n", (unsigned int)str3.c_str() );
+```
+
+​	该例子中，输出的三个地址是一致的，即三个string对象内部的char*指向同一块地址。
+
+![string_share_mem](D:\Code\0_MyCode\MyDocuments\Notes\C++\pic\string_share_mem.png)
+
+- 写时拷贝
+
+```c++
+string str1 = "hello world";
+string str2 = str1;
+string str3 = str2;
+  
+printf ("内存共享:\n");
+printf ("\tstr1 的地址: %x\n", (unsigned int)str1.c_str() );
+printf ("\tstr2 的地址: %x\n", (unsigned int)str2.c_str() );
+printf ("\tstr3 的地址: %x\n", (unsigned int)str3.c_str() );
+ 
+str3[1]='a';
+  
+printf ("通过写时拷贝之后:\n");
+printf ("\tstr1 的地址: %x\n", (unsigned int)str1.c_str() );
+printf ("\tstr2 的地址: %x\n", (unsigned int)str2.c_str() );
+printf ("\tstr3 的地址: %x\n", (unsigned int)str3.c_str() );
+
+//输出结果：
+内存共享:
+　　str1 的地址: 83f9017
+　　str2 的地址: 83f9017
+　　str3 的地址: 83f9017
+通过写时拷贝之后:
+　　str1 的地址: 83f9017
+　　str2 的地址: 83f9017
+　　str3 的地址: 83f9034
+```
+
+​	str3改变自身内容后，其地址发生了变化，而str1、str2仍然指向同一块内存。
+
+- 原理
+
+​	string在堆上开辟空间，不仅要存放字符串，还要存放一个**引用计数**。
+
+​	当有其他string对象要引用自己时，会使引用计数+1。析构时，对应的引用计数-1。当引用计数为0时，才会真正的释放该内存。
+
+​	若string对象准备修改所指的内存时，若发现引用计数大于1，那么就新开辟一块内存，使新内存中的引用计数为1，并将之前的引用计数-1。
 
 # 多线程
 

@@ -2563,6 +2563,41 @@ float closestDepth = texture(depthMap, sampleVec).r;
 
 ​	参考这里[DOOM (2016) - Graphics Study](https://www.adriancourreges.com/blog/2016/09/09/doom-2016-graphics-study/)。
 
+# LightMap
+
+## 静态LightMap
+
+​	本小节参考自：[Light烘培原理](https://blog.csdn.net/zjull/article/details/50924429)。
+
+​	LightMap**预计算**物体的Diffuse光照信息，并保存到纹理上，实时绘制时不再进行光照计算。
+
+​	LightMap只能存储Diffuse信息，因为观察位置是实时改变的。
+
+- 优势
+
+(1) 省去光照计算，提高绘制速度。
+
+(2) 对于过度复杂的光照(如光线追踪等)，实时计算不现实。若预计算好保存到纹理上，可提升模型的光影效果。
+
+(3) lightmap可以二次处理，如模糊使阴影更加柔和。
+
+- 缺点
+
+(1) 模型额外多了一层纹理，增加了资源的管理成本。
+
+(2) 若光源方向改变，静态lightmap是无法变换的。静态阴影，没法直接影响到动态模型。
+
+- 静态lightmap简单原理
+
+​	在顶点着色器中，将原本转换到裁剪空间的顶点，输出到纹理坐标系中，片元着色器仍然执行常规的光照计算：
+
+```c++
+//Output.Position = PrjMat * ViewMat * ModelMat * Input.Position;  
+// transform to projection space  
+Output.Position.xy = Input.Texcoord * float2(2, -2) + float2(-1, 1);  
+Output.Position.w  = 1;
+```
+
 # 骨骼动画
 
 ## 1 基本原理

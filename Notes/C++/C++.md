@@ -1687,7 +1687,208 @@ void operator&() const;
 };
 ```
 
-## 9 隐式类型转换操作符
+## 9 static_cast和dynamic_cast(C++11)
+
+- static_cast
+
+  强制转换，可转换基础数据类型、指针、引用和对象。
+
+  static_cast的**下行转换**(基类转子类)是不安全的。
+
+- dynamic_cast
+
+  只可以转换有**类继承关系**，且是**多态类型**的指针或引用。
+
+  会进行类型检查，**下行转换**是安全的。
+
+- 区别
+
+  ① static_cast在**编译期执行转换**，dynamic_cast在**运行时进行检查**。
+
+  ② static_cast用于替代C语言的强制类型转换，可能导致**信息丢失**，没有类型检查保证转换的安全性，**可以转换对象**。
+
+  dynamic_cast只能用于类层次间的转换，只在**多态存在时合法**，virtual关键字去掉后无法使用。
+
+  ③ static_cast运行时无代价，dynamic_cast存在运行时代价。
+
+- dynamic_cast原理
+
+  基于RTTI(run time type identification)：在**虚函数表的最前方**，会存储**type_info**结构体，用于记录类型信息。
+
+  RTTI通过比较type_info中的name来实现的。
+
+  综上，dynamic_cast会存在运行时开销。
+
+## 10 lambda表达式以及底层原理(C++11)
+
+- 对函数指针进行对象化管理
+
+​	智能指针：对**指针**进行**对象化管理**，通过对象的生命周期来管理指针的生命周期。
+
+​	lambda表达式：对**函数指针**进行**对象化管理**，通过对象可以使函数指针访问函数的外部变量，具体格式如下：
+
+```c++
+[捕获列表](形参列表) mutable 异常列表 -> 返回类型
+{
+    函数体
+}
+
+mutable表示能修改被捕获的值，只在按值捕获时生效
+```
+
+- lambda表达式的约定
+
+​	禁用默认构造函数，禁用赋值操作符；
+
+​	开放拷贝构造函数，不能有默认参数，不支持可变参数；
+
+​	如果没有捕获外部变量，lambda表达式可转换为函数指针。
+
+- Cpp Insights展示lambda对应的匿名类
+
+​	按值捕获：
+
+```c++
+int main()
+{
+    int val = 10;
+  	int a = 1;
+  	auto lambda = [val](int x, int y) -> bool
+    {
+      return val > x + y;
+    };
+  	bool ret = lambda(3, 4);
+  	return 0;
+}
+
+//编译后的代码
+int main()
+{
+  int val = 10;
+  int a = 1;
+    
+  class __lambda_7_18
+  {
+    public: 
+    inline /*constexpr */ bool operator()(int x, int y) const
+    {
+      return val > (x + y);
+    }
+    
+    private: 
+    int val;
+    
+    public:
+    __lambda_7_18(int & _val)
+    : val{_val}
+    {}
+    
+  };
+  
+  __lambda_7_18 lambda = __lambda_7_18{val};
+  bool ret = lambda.operator()(3, 4);
+  return 0;
+}
+```
+
+​	编译器为lambda生成了一个类，其包含被捕获的**私有成员对象**、**可执行函数**以及构造函数。
+
+​	按引用捕获：
+
+```c++
+int main()
+{
+    int val = 10;
+  	int a = 1;
+  	auto lambda = [&val](int x, int y) -> bool
+    {
+      return val > x + y;
+    };
+  	bool ret = lambda(3, 4);
+  	return 0;
+}
+
+//编译后的代码
+int main()
+{
+  int val = 10;
+  int a = 1;
+    
+  class __lambda_7_18
+  {
+    public: 
+    inline /*constexpr */ bool operator()(int x, int y) const
+    {
+      return val > (x + y);
+    }
+    
+    private: 
+    int & val;
+    
+    public:
+    __lambda_7_18(int & _val)
+    : val{_val}
+    {}
+    
+  };
+  
+  __lambda_7_18 lambda = __lambda_7_18{val};
+  bool ret = lambda.operator()(3, 4);
+  return 0;
+}
+```
+
+​	私有成员对象是一个引用。
+
+- lambda原理
+
+① 编译器实现lambda匿名类，实现构造函数，私有成员变量，重载operator()。
+
+② 根据匿名类创建对象，传入捕获的值或引用。
+
+③ 调用operator()。
+
+④ mutable决定**operator()**是否被const修饰。
+
+​	若存在mutable，则不用const修饰；若没有mutable，则用const修饰成员函数。
+
+​	**在类当中**，**this**指针是**指针常量**，不能修改指针的指向。若函数被const修饰，那么this指针为const A const* this，因此不能修改成员变量。
+
+⑤ 若lambda不捕获外部变量，可转化为函数指针。
+
+​	不捕获外部变量，不会使用this指针，则编译器会生成**静态成员函数**，从而转化为函数指针。如下所示：
+
+```c++
+auto lambda = [](int x, int y) -> bool
+{
+    return 10 > x + y;
+};
+
+//编译后的匿名函数
+class __lambda_7_18
+{
+public: 
+inline /*constexpr */ bool operator()(int x, int y) const
+{
+    return 10 > (x + y);
+}
+
+using retType_7_18 = auto (*)(int, int) -> bool;
+inline constexpr operator retType_7_18 () const noexcept
+{
+    return __invoke;
+};
+    
+private: 
+static inline /*constexpr */ bool __invoke(int x, int y)
+{
+	return __lambda_7_18{}.operator()(x, y);
+}
+    
+};
+```
+
+## 11 隐式类型转换操作符
 
 ​	隐式类型转换操作符形式如下：
 
@@ -1721,7 +1922,7 @@ si = 4; //首先将4隐式转换为SmallInt，然后调用SmallInt::operator=()
 std::cout << si + 3 << endl; //调用SmallInt::operator int(); 首先将si隐式地转换为int，然后执行整数的加法。
 ```
 
-## 10 constexpr
+## 12 constexpr
 
 ​	constexpr表达式是指**值不会改变**且在**编译过程**就能得到结果的表达式。
 
@@ -1769,7 +1970,7 @@ k = &j; //Error
 
 ​	常量表达式函数的返回值可以在编译阶段就计算出来。不过在定义常量表示函数的时候，我们会遇到更多的约束规则。
 
-## 11 volatile关键字
+## 13 volatile关键字
 
 ### 1) volatile的特性
 
@@ -1853,7 +2054,7 @@ thread1()
 
 ​	最终，只能通过**atomic**或**加锁**来修改上述程序。
 
-## 12 inline关键字
+## 14 inline关键字
 
 ### 1) inline关键字的作用
 
@@ -2101,124 +2302,169 @@ struct _Vector_impl : public _Tp_alloc_type {
 - 传入左值对象，empalce_back内部使用完美转发，在构造对象时调用拷贝构造函数进行构造并存入容器中。
 - 传入右值对象(使用std::move())，emplace_back内部使用完美转发，在构造对象时调用移动构造函数并存入容器中。若没有移动构造，则调用拷贝构造创建对象并存入容器中。
 
-## 3 空间配置器
+## 3 STL空间配置器
 
-​	allocator是STL的重要组成，一般用户不怎么熟悉它，因为allocator隐藏在所有容器身后，默默**完成内存配置与释放，对象构造和析构的工作**。
+​	空间配置器实现**思路**：空间分配和对象构建分离，对象析构和空间释放分离。
 
-<img src=".\pic\c++_allocator.png" alt="c++_allocator" style="zoom:80%;" />
+### 1) 默认的空间配置器
 
-​	上图中，左边是用户代码，右边是STL内部实现。
-
-​	vector的模板参数class T被替换为int，同时第二个模板参数因为没有指定，所以为**默认模板参数**，即`allocator<int>`。
-
-​	SGI STL 实现了两个allocator：一个是标准的std::allocator，另一个是特殊的std::alloc。
-
-### 1) 符合STL接口的自定义空间分配器
+​	本小节代码参考gcc-9。以vector为例，vector默认使用**std::allocator**：
 
 ```c++
-#include <new>
-#include <cstddef>
-#include <cstdlib>
-#include <climits>
-#include <iostream>
-
-namespace my_alloc
+//stl_vector.h
+template<typename _Tp, typename _Alloc = std::allocator<_Tp> >
+class vector : protected _Vector_base<_Tp, _Alloc>
 {
-    // allocate的实际实现，简单封装new，当无法获得内存时，报错并退出
-    template <class T>
-    inline T* _allocate(ptrdiff_t size, T*) {
-        set_new_handler(0);
-        T* tmp = (T*)(::operator new((size_t)(size * sizeof(T))));
-        if (tmp == 0) {
-            cerr << "out of memory" << endl;
-            exit(1);
-        }
-        return tmp;
+    //......
+}
+
+//allocator.h
+template<typename _Tp>
+class allocator : public __allocator_base<_Tp>
+{
+    //......
+}
+
+//c++allocator.h
+template<typename _Tp>
+using __allocator_base = __gnu_cxx::new_allocator<_Tp>;
+
+//new_allocator.h
+template<typename _Tp>
+class new_allocator
+{
+	//......
+	_GLIBCXX_NODISCARD pointer
+    allocate(size_type __n, const void* = static_cast<const void*>(0))
+    {
+        if (__n > this->max_size())
+            std::__throw_bad_alloc();
+        
+        return static_cast<_Tp*>(::operator new(__n * sizeof(_Tp)));
+    }
+    
+	void
+    deallocate(pointer __p, size_type)
+    {
+        ::operator delete(__p);
+    }
+    
+	template<typename _Up, typename... _Args>
+	void
+    construct(_Up* __p, _Args&&... __args) noexcept(std::is_nothrow_constructible<_Up, _Args...>::value)
+    { 
+        ::new((void *)__p) _Up(std::forward<_Args>(__args)...); 
     }
 
-    // deallocate的实际实现，简单封装delete
-    template <class T>
-    inline void _deallocate(T* buffer) { ::operator delete(buffer); }
-
-    // construct的实际实现，placement new在分配的内存上调用对象的构造函数
-    template <class T1, class T2>
-    inline void _construct(T1* p, const T2& value) { new(p) T1(value); }
-
-    // destroy的实际实现，直接调用对象的析构函数
-    template <class T>
-    inline void _destroy(T* ptr) { ptr->~T(); }
-
-    template <class T>
-    class allocator {
-    public:
-        typedef T           value_type;
-        typedef T*          pointer;
-        typedef const T*    const_pointer;
-        typedef T&          reference;
-        typedef const T&    const_reference;
-        typedef size_t      size_type;
-        typedef ptrdiff_t   difference_type;
-
-        // 构造函数
-        allocator() {}
-        
-        template <class U>
-        allocator(const allocator<U>& c){}
-
-        // rebind allocator of type U
-        template <class U>
-        struct rebind { typedef allocator<U> other; };
-
-        // allocate，deallocate，construct和destroy函数均调用上面的实际实现
-        // hint used for locality. ref.[Austern],p189
-        pointer allocate(size_type n, const void* hint = 0) 
-        {
-            return _allocate((difference_type)n, (pointer)0);
-        }
-        void deallocate(pointer p, size_type n) { _deallocate(p); }
-        void construct(pointer p, const T& value) { _construct(p, value); }
-        void destroy(pointer p) { _destroy(p); }
-
-        pointer address(reference x) { return (pointer)&x; }
-        const_pointer const_address(const_reference x) { return (const_pointer)&x; }
-
-        size_type max_size() const { return size_type(UINT_MAX / sizeof(T)); }   
-    };
-} // end of namespace myalloc
+    template<typename _Up>
+    void
+    destroy(_Up* __p) noexcept(std::is_nothrow_destructible<_Up>::value)
+    { 
+        __p->~_Up(); 
+    }
+    //......
+}
 ```
 
-​	现在，可以使用自己编写的allocator来为vector分配空间：
+​	new_allocator由四个重要的方法构成，allocate()、deallocate、construct、destroy：
+
+- allocate()主要调用::operator new，::operator new内部主要调用malloc。
+- deallocate()主要调用::operator delete，该全局函数默认调用free。
+- construct()主要调用placement new。
+- destroy()主要调用析构函数。
+
+​	默认的空间配置器是对空间分配、对象构造、对象析构和空间释放进行了**简单的封装**。
+
+### 2) 基于内存池的空间配置器
+
+​	通过下述方式，让vector使用基于内存池的空间分配器：
 
 ```c++
-std::vector<int, my_alloc::allocator<int> > v;
+#include <vector>
+#include <ext/pool_allocator.h>
+
+std::vector<int, __gnx_cxx::__pool_alloc<int>> vec;
 ```
 
-### 2) SGI STL 标准配置器(std::allocator)
+- 主要作用
 
-​	这个allocator部分符合STL标准，它在文件 defalloc.h 中实现。
+​	解决用于**频繁申请小块内存(<= 128b)**导致的问题。
 
-​	但是SGI STL的容器并不使用它，它存在的意义仅在于为用户提供一个兼容老代码的折衷方法，其实现仅仅是对**new和delete的简单包装**。这里我们不再深究。
+- 实现
 
-### 3) SGI STL 特殊配置器(std::alloc)
+​	重写了allocate和deallocate。
 
-​	这个配置器是SGI STL的默认配置器，它在`<memory>`中实现。
+​	第一级配置器：申请内存 > 128b时，采用::operator new分配空间(实际是malloc)。
 
-​	其**主要作用**是为了解决内存的申请和释放时引入的**内存碎片**问题，SGI使用的方法是 “双层级配置器”。
+​	第二级配置器：申请内存<= 128b时，通过**内存池**实现。
 
-<img src=".\pic\c++_alloc.png" alt="c++_alloc" style="zoom:95%;" />
+​	内存池包含长度为16的free_list数组，每个数组成员管理一个链表，数组成员为链表自由内存的首地址。
 
-​	std::alloc接口如下：
+​	free_list[0]链表每个元素是8字节的内存块；free_list[1]链表每个元素是16字节的内存块；free_list[2]链表每个元素是24字节的内存块；以此类推，free_list[15]链表每个元素是128字节的内存块，如下所示：
 
-- `static T* allocate()`函数负责空间配置，返回一个T对象大小的空间。
-- `static T* allocate(size_t)`函数负责批量空间配置。
-- `static void deallocate(T*)`函数负责空间释放。
-- `static void deallocate(T*,size_t)`函数负责批量空间释放。
+<img src="D:\Code\0_MyCode\MyDocuments\Notes\C++\pic\c++_allocator_mem_pool.png" alt="c++_allocator_mem_pool" style="zoom:100%;" />
 
-​	当配置区块**大于128 bytes**时，调用第一级配置器。第一级直接调用 malloc()、deallocate()、free()等系统调用分配内存。
+```c++
+//pool_allocator.h
+template<typename _Tp>
+class __pool_alloc : private __pool_alloc_base  
+{
+    //......
+	template<typename _Tp>
+    _GLIBCXX_NODISCARD _Tp*
+    __pool_alloc<_Tp>::allocate(size_type __n, const void*)
+    {
+        pointer __ret = 0;
+        if (__builtin_expect(__n != 0, true))
+        {
+            if (__n > this->max_size())
+                std::__throw_bad_alloc();
+            const size_t __bytes = __n * sizeof(_Tp);
+            //......
+            //找到对应的自由链表
+            _Obj* volatile* __free_list = _M_get_free_list(__bytes);
+            __scoped_lock sentry(_M_get_mutex());
+            _Obj* __restrict__ __result = *__free_list;
+            //......
+        }
+        return __ret;
+    }
+    
+    template<typename _Tp>
+    void
+    __pool_alloc<_Tp>::deallocate(pointer __p, size_type __n)
+    {
+        //......
+        const size_t __bytes = __n * sizeof(_Tp);
+        //......
+        _Obj* volatile* __free_list = _M_get_free_list(__bytes);
+        _Obj* __q = reinterpret_cast<_Obj*>(__p);
+        
+        __scoped_lock sentry(_M_get_mutex());
+        __q ->_M_free_list_link = *__free_list;
+        //头插法归还内存
+        *__free_list = __q;
+    }
+}
+```
 
-​	当配置区块**小于128 bytes**时，调用第二级配置器。第二级配置器实现了**内存池**和**自由链表**：配置维护16个自由链表，负责16种小型区块的配置能力。当程序多次进行小空间的配置时，可以从内存池和自由链表中获取空间，减少系统调用，提升性能。
+### 3) malloc和基于内存池的空间配置器的区别
 
-​	最终，它们都是用`malloc()`和`free()`来配置和释放空间。
+​	malloc内部维护了一个内存池，它和pool_allocator的区别如下：
+
+- malloc机制
+
+​	当内存分配<=**128kb**时(pool_allocator是**128b**，不再是一个量级)，先从内存池获取，否则通过brk系统调用从堆区分配内存，回收时则归还到内存池中。
+
+​	当分配内存>=128kb时，通过**mmap**从文件映射区分配内存，回收时通过**munmap**释放，归还给操作系统。
+
+- 性能
+
+​	malloc是系统通用的内存分配器，适用于各种场景，但会造成内存碎片。
+
+​	pool_allocator针对小内存的场景，可减少内存碎片。
+
+​	综上，malloc是pool_allocator中更底层的分配器。
 
 ## 4 list
 

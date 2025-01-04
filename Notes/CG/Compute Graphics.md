@@ -975,6 +975,37 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 ​	通过ray和三维空间的三角面求交，来完成拾取。
 
+## 10 几种剔除技术Culling
+
+- 视锥剔除Frustum Culling
+
+​	最直接的剔除技术。在CPU侧，object通过和摄像机的frustum求交，把frustum之外的object忽略。
+
+- 遮挡剔除Occlusion Culling
+
+​	剔除被其他对象遮挡的对象。例如，墙后的家具将不会被渲染。该技术适用于包含大量室内场景或狭小空间的场景。
+
+​	一般在CPU侧完成计算，可以有效的减少overdraw。
+
+- 细节层次剔除LOD Culling
+
+​	LOD Culling根据物体离摄像机的距离，动态降低对象的复杂度。
+
+- 层级剔除Layer Culling
+
+​	对每种物体标记其对应的layer，并有选择性的隐藏某个layer下的物体。
+
+​	多用于调试或批量隐藏某一类的物体。
+
+- 距离剔除Distance Culling
+
+​	根据与摄像机的距离，隐藏对象。适用于开放世界游戏，远处的对象不需要渲染。
+
+- 背面剔除Back Face Culling
+- GPU遮挡剔除GPU Occlusion Culling
+
+​	Unity6中的高级功能，通过GPU在运行时处理遮挡剔除。
+
 # PBR
 
 ## 1 PBR核心理论

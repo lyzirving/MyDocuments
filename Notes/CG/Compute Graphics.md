@@ -583,119 +583,53 @@ BVHBuildNode* BVHAccel::recursiveBuild(std::vector<Object*> objects)
 
 # 渲染管线
 
-​	图形渲染管线：原始图形数据途经输送管道，经过各种变化处理最终出现在屏幕的过程。
-
-​	在概念上可以分为四个阶段：**应用程序阶段**、**几何阶段**、**光栅化阶段**和**像素处理阶段**。
-
-<img src="./pic/cg_pipeline_1.png" alt="cg_pipeline_1" style="zoom:80%;" />
-
-​	应用阶段通常是在CPU端进行处理，包括碰撞检测、动画、物理模拟以及视椎体剔除等任务，这个阶段会将数据送到渲染管线中；
-
-​	顶点着色器、投影变换、曲线细分、几何着色器、图元装配、裁剪、屏幕映射；
-
-​	光栅化将图元离散化片段的过程；
-
-​	像素处理阶段包括像素着色和混合的功能。如下图所示：
-
-<img src="./pic/cg_pipeline.png" alt="cg_pipeline" style="zoom:85%;" />
-
 ## 1 管线概述
 
-- **图元组装**
+​	高级的渲染步骤是由名为pipeline的**软件架构**所实现的。
 
-​	图元组装将输入的顶点组装成指定的图元。
+​	管线是一连串的**顺序计算阶段**(stage)，每个阶段有其具体目的。
 
-​	图元组装阶段会进行**裁剪**和**背面剔除**相关的优化，以减少进入光栅化的图元的数量，加速渲染过程。
+​	管线中的每个阶段通常独立于其他阶段。理想地，所有阶段都能**并行运行**，而一些阶段能**同时操作多个数据项**。
+
+<img src="D:\Code\0_MyCode\MyDocuments\Notes\CG\pic\cg_rendering_pipeline.png" alt="cg_rendering_pipeline" style="zoom:100%;" />
+
+​	通常，游戏引擎的管线中，高级的阶段包含：
+
+① **工具阶段**(脱机)：定义几何和表面材质。
+
+② **资产调节阶段**(脱机)：处理几何和材质数据，生成引擎可用的格式。
+
+③ **应用程序阶段**(CPU)：识别出潜在可见的网格实例，执行碰撞检测、动画、物理模拟、视椎体剔除等任务，把网格和材质提交到图形硬件以供渲染。
+
+④ **几何阶段**(GPU)：执行顶点变换、透视投影、曲面细分、几何着色器、图元装配、裁剪和屏幕映射等。
+
+​	图元组装将输入的顶点组装成指定的图元。图元组装会进行**裁剪**和**背面剔除**相关的优化，以减少进入光栅化的图元的数量。
 
 ​	在光栅化之前，还会进行屏幕映射的操作：**透视除法**和**视口变换**。
 
-- **光栅化**
+⑤ **光栅化和像素处理阶段**(GPU)：把三角形**离散化**为片段，并对片段**着色**。片段经过多种测试后，最终和帧缓冲区混合。
 
-​	经过图元组装以及屏幕映射后，物体坐标被变换到了**窗口坐标**。
-
-​	光栅化是个**离散化**的过程，将3D连续的物体转化为离散屏幕像素点的过程。
+​	光栅化是个**离散化**的过程，将三维空间连续的几何转化为离散屏幕像素点的过程。
 
 ​	光栅化会确定图元所覆盖的片段，利用顶点属性**插值**得到片段的属性信息，然后送到片段着色器进行颜色计算。
 
-​	注意，**片段是像素的候选者**，只有通过后续的测试，片段才会成为最终显示的像素点。
+​	**片段是像素的候选者**，只有通过后续的测试(裁切测试、Alpha测试、模板测试、深度测试，片段才会成为最终显示的像素点。
 
-- **片段着色器**
+​	下图展示了③~⑤阶段：
 
-​	片段着色器用来决定屏幕上像素的最终颜色，可能会进行大量效果计算(光照和阴影)。
+<img src="./pic/cg_pipeline_1.png" alt="cg_pipeline_1" style="zoom:80%;" />
 
-- **测试混合**
+​	下图展示了④~⑤阶段的相关细节：
 
-​	管线的**最后一个阶段**是测试混合阶段。测试包括裁切测试、Alpha测试、模板测试和深度测试(**late-z**)。
+<img src="./pic/cg_pipeline.png" alt="cg_pipeline" style="zoom:85%;" />
 
-​	没有经过测试的片段会被丢弃，不需要进行混合阶段；经过测试的片段会**进入混合阶段**。
+​	下图展示了数据在pipeline中的流转：
 
-​	注意，绘制半透明物体最好遵循**画家算法(painter algorithm)**，将物体排序，**由远及近**进行绘制。因为半透明物体的绘制顺序会影响混合的结果。	
+<img src="D:\Code\0_MyCode\MyDocuments\Notes\CG\pic\cg_pipeline_data_transform.png" alt="cg_pipeline_data_transform" style="zoom:80%;" />
 
-<img src="./pic/cg_painter_algothimn.png" alt="cg_painter_algothimn" style="zoom:75%;" />
+## 2 坐标变换
 
-## 2 late-Z的优化
-
-​	像素处理阶段，片元被着色后(fragmet shader)，通过深度测试，才转换为像素，显示在屏幕上。
-
-​	因此，被着色后的片元有可能被舍弃，这就引起了**过渡绘制(OverDraw)**。
-
-​	下述几个方案都是为了优化过渡绘制，提升效率。
-
-### 1) early-z
-
-​	early-z是GPU硬件层的优化，在**光栅化后**和**片元着色前**添加early-z阶段。
-
-​	early-z执行的操作和late-z完全一样，但early-z的优化效果**不稳定**。
-
-#### 1.1) early-z被关闭
-
-​	① 手动**写入深度值**；② **开启alpha test**；③ **执行丢弃像素操作**。
-
-​	若执行上述操作，GPU就会关闭early-z，直到下一次clear z-buffer。
-
-​	这些操作在**片元着色和late-z之间执行**，会修改z-buffer中的值，导致early-z的结果不正确。
-
-#### 1.2) early-z不稳定
-
-​	若按由近及远的顺序绘制，early-z可以完美避免过度绘制；
-
-​	若由远及近绘制，early-z不起任何作用。
-
-### 2) z-culling
-
-​	z-culling是GPU硬件层的优化。
-
-#### 2.1) z-culling和early-z的区别
-
-​	early-z以pixel-quad为单位，**逐像素**比较；
-
-​	z-culling以tile为单位，按tile**整体**进行比较。其中，tile即tile based rendering(TBR)中的概念。
-
-#### 2.2) z-culling比较方式
-
-​	获取当前tile的深度最值：$Z^{tile}_{min}$、$Z^{tile}_{max}$；
-
-​	获取tile所属的深度缓冲区的最值：$Z_{min}$、$Z_{max}$；
-
-​	若$Z^{tile}_{max} < Z_{min}$，则tile全部可见，保留整个tile，并在late-z阶段省去读缓冲的操作，直接进行写buffer；
-
-​	若$Z^{tile}_{min} > Z_{max}$，则tile全部不可见，丢弃整个tile；
-
-​	对于其他情况，则交给后续的late-z判断。
-
-​	z-culling所需要的比对数据储存在on-chip缓存中的某个固定区域，特点即是容量小但速度快。
-
-​	由于在z-culling阶段，对深度缓存是只读的，所以**不会**因为① 手动写入深度值；② 开启alpha test；③ 执行丢弃像素操作，导致z-buffer修改，导致测试失效。因此z-culling弥补了early-z的第一个缺点。
-
-### 3) z-prepass
-
-​	z-perpass是软件层的技术，主要配合early-z使用，优化early-z的第二个缺点：不稳定。
-
-​	z-prepass思路类似延迟渲染：使用**两个pass**，第一个pass渲染时**只写入深度**；第二个pass关闭深度写入，设置深度比较函数为“**相等**”。
-
-​	z-prepass**必须配合early-z使用**。若和late-z配合使用，那么无用的片元仍然会经历片元着色，造成大量计算的浪费。
-
-## 3 坐标变换流程
+### 1) 坐标变换流程
 
 <img src="./pic/cg_coordinate.png" alt="cg_coordinate" style="zoom:90%;" />
 
@@ -705,11 +639,11 @@ BVHBuildNode* BVHAccel::recursiveBuild(std::vector<Object*> objects)
 
 <img src="./pic/cg_matrix_flow.png" alt="cg_matrix_flow" style="zoom:100%;" />
 
-## 4 坐标变换矩阵
+### 2) 坐标变换矩阵
 
 <span id="coordinate_transform"></span>
 
-### 1) 标准正交基
+#### 2.1) 标准正交基
 
 ​	正交矩阵的所有列(行)向量构成了一个标准正交基(**Orthonormal Bases**)，在**列主序**的情况下，它的列向量是两两垂直的**单位向量**。
 
@@ -717,7 +651,7 @@ BVHBuildNode* BVHAccel::recursiveBuild(std::vector<Object*> objects)
 
 ​	比如，在标准参考系下，有向量 $\vec{v}$ 。该向量在正交基 $R$ 下，表示为 $\vec{v_{r}}$；在正交基 $Q$ 下，表示为 $\vec{v_{q}}$。其中：$I\vec{v} = R\vec{v_{r}} = Q\vec{v_{q}}$ 。
 
-### 2) 示例
+#### 2.2) 示例
 
 $\begin{pmatrix}1 \\ 2 \\ 6 \end{pmatrix} = \begin{pmatrix}1 & 0 & 0\\ 0 & 1 & 0 \\ 0 & 0 & 1 \end{pmatrix} \begin{pmatrix}1 \\ 2 \\ 6 \end{pmatrix} = \begin{pmatrix}0 & 0 & 1\\ 1 & 0 & 0 \\ 0 & 1 & 0 \end{pmatrix} \begin{pmatrix}2 \\ 6 \\ 1 \end{pmatrix}$
 
@@ -725,7 +659,7 @@ $\begin{pmatrix}1 \\ 2 \\ 6 \end{pmatrix} = \begin{pmatrix}1 & 0 & 0\\ 0 & 1 & 0
 
 ​	$\begin{pmatrix}0 & 0 & 1\\ 1 & 0 & 0 \\ 0 & 1 & 0 \end{pmatrix}$是正交基$R$，三轴分别为$\begin{pmatrix}0 \\ 1 \\ 0 \end{pmatrix}$、$\begin{pmatrix}0 \\ 0 \\ 1 \end{pmatrix}$和$\begin{pmatrix}1 \\ 0 \\ 0 \end{pmatrix}$，$\begin{pmatrix}2 \\ 6 \\ 1 \end{pmatrix}$是$\vec{v}$在正交基$R$下的坐标$\vec{v}_{r}$。
 
-### 3) 坐标变换公式
+#### 2.3) 坐标变换公式
 
 ​	根据小节2)中的示例，有$I\vec{v} = R\vec{v}_{r}$，其中$I$是单位矩阵，有：$\vec{v} = R\vec{v}_{r}$。
 
@@ -735,7 +669,21 @@ $\begin{pmatrix}1 \\ 2 \\ 6 \end{pmatrix} = \begin{pmatrix}1 & 0 & 0\\ 0 & 1 & 0
 
 ​	又因正交矩阵，有$R^{-1} = R^{T}$，$R^{T}$代表**转置**。综上：$\vec{v}_{r} = R^{T}\vec{v}$。
 
-## 5 相机变换
+## 3 渲染状态
+
+​	渲染状态设置是**全局的**——它们在整个GPU中有效。
+
+​	**改变渲染状态时**，整个GPU管道**必须完成目前的工作**，才能换上新的设置。因此，若不妥善管理，会令性能严重下降。
+
+​	要尽量减少渲染状态的改变次数，最好的解决方案是**按材质来排序几何物体**。
+
+​	下图描述了各种渲染状态改变时，带来的相对消耗：
+
+<img src="D:\Code\0_MyCode\MyDocuments\Notes\CG\pic\cg_relative costs of state changes.png" alt="cg_relative costs of state changes" style="zoom:60%;" />
+
+​	但是，按材质排序几何，会带来overdraw的问题。因此引擎上需要进行一些绘制顺序的设计。
+
+## 4 相机变换
 
 ### 1) 关键因素
 
@@ -786,7 +734,7 @@ $R = R_{cam}^{T} \cdot T_{cam}^{-1}$
 
 <img src=".\pic\cg_camera_transform.jpg" alt="cg_camera_transform" style="zoom:100%;" />
 
-## 6 透视投影
+## 5 透视投影
 
 ​	世界空间的点经过相机矩阵后，被转换到相机空间。此时，多边形可能会被视椎体裁剪，但在不规则体中裁剪很难，所以裁剪被安排到规则观察体(`Canonical View Volume, CVV`)中(`齐次裁剪空间`)。
 
@@ -881,7 +829,7 @@ $p'=(-N\frac{x}{z}, -N\frac{y}{z}, -\frac{az+b}{z})\qquad\qquad\qquad\qquad\qqua
 
 ​	投影失真的解决方法就是之后的`视口变换`：把归一化的顶点按照和`投影面上相同的比例`变换到视口中，从而解除透视投影变换带来的失真现象。
 
-## 7 正交投影
+## 6 正交投影
 
 ​	本小节参考自[https://zhuanlan.zhihu.com/p/122411512](https://zhuanlan.zhihu.com/p/122411512)。
 
@@ -905,7 +853,7 @@ $M_{ortho} = M_{scale}\ast M_{translation}$。
 
 ​	综上，正交矩阵实际做了两个工作：① 平移；② 缩放。
 
-## 8 遮挡和深度缓存
+## 7 遮挡和深度缓存
 
 ### 画家算法&&深度缓存
 
@@ -941,7 +889,79 @@ $M_{ortho} = M_{scale}\ast M_{translation}$。
 
 ​	因此，在shader中一般要对**深度取倒数**，再利用它对顶点属性插值。
 
-## 9 3d拾取
+## 8 early-z
+
+​	像素处理阶段，片元被着色后(fragmet shader)，通过深度测试，才转换为像素，显示在屏幕上。
+
+​	因此，被着色后的片元有可能被舍弃，这就引起了**过渡绘制(OverDraw)**。early z就是为了优化过渡绘制。
+
+### 1) early-z时机
+
+​	early-z是GPU硬件层的优化，在**光栅化后**和**片元着色前**添加early-z阶段。
+
+​	early-z执行的操作和late-z完全一样，但early-z的优化效果**不稳定**。
+
+#### 1.1) early-z被关闭
+
+​	① 手动**写入深度值**；② **开启alpha test**；③ **执行丢弃像素操作**。
+
+​	若执行上述操作，GPU就会关闭early-z，直到下一次clear z-buffer。
+
+​	上述操作在**片元着色和late-z之间执行**，会修改z-buffer中的值，导致early-z的结果不正确。
+
+#### 1.2) early-z不稳定
+
+​	若按由近及远的顺序绘制，early-z可以完美避免过度绘制；
+
+​	若由远及近绘制，early-z不起任何作用。
+
+### 2) z-culling
+
+​	z-culling是GPU硬件层的优化。
+
+#### 2.1) z-culling和early-z的区别
+
+​	early-z以pixel-quad为单位，**逐像素**比较；
+
+​	z-culling以tile为单位，按tile**整体**进行比较。其中，tile即tile based rendering(TBR)中的概念。
+
+#### 2.2) z-culling比较方式
+
+​	获取当前tile的深度最值：$Z^{tile}_{min}$、$Z^{tile}_{max}$；
+
+​	获取tile所属的深度缓冲区的最值：$Z_{min}$、$Z_{max}$；
+
+​	若$Z^{tile}_{max} < Z_{min}$，则tile全部可见，保留整个tile，并在late-z阶段省去读缓冲的操作，直接进行写buffer；
+
+​	若$Z^{tile}_{min} > Z_{max}$，则tile全部不可见，丢弃整个tile；
+
+​	对于其他情况，则交给后续的late-z判断。
+
+​	z-culling所需要的比对数据储存在on-chip缓存中的某个固定区域，特点即是容量小但速度快。
+
+​	由于在z-culling阶段，对深度缓存是只读的，所以**不会**因为① 手动写入深度值；② 开启alpha test；③ 执行丢弃像素操作，导致z-buffer修改，导致测试失效。因此z-culling弥补了early-z的第一个缺点。
+
+## 9 z-prepass
+
+​	z-perpass是软件层面的技术。z-prepass主要应用于不透明物体，并**渲染场景两次**：
+
+- 第一次绘制
+
+​	仅使用vertex shader，快速产生深度缓冲。
+
+​	为了减少深度缓冲的写入次数，不透明物体可按**从近至远**的顺序绘制。
+
+​	执行完该pass，后续的drawcall可**避免overdraw**。
+
+- 第二次绘制
+
+​	关闭深度缓冲，设置**深度比较函数**为相等，用完整的颜色填充帧缓冲。可按几何物体的**材质排序**，用最少的状态改变渲染颜色，使管道吞吐量最大化。
+
+​	综上，按z-prepass完成了不透明物体的渲染后，可按从远至近的顺序渲染半透明物体，从而得到正确的alpha混合。
+
+​	z-prepass一般用于forward rendering中。在延迟渲染中，z-prepass可用来优化pre-geometry阶段。
+
+## 10 3d拾取
 
 ### 1) 屏幕上的点转换到视口坐标
 
@@ -975,7 +995,15 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 
 ​	通过ray和三维空间的三角面求交，来完成拾取。
 
-## 10 几种剔除技术Culling
+## 11 场景图Scene Graph
+
+​	游戏世界可以达到很大的规模，但大多数几何物体都在摄像机视椎体之外。
+
+​	需要设计数据结构管理场景中所有的几何物体，能迅速**丢弃**大量不在视椎体范围内的几何，且能帮助对场景的几何体**排序**。
+
+​	这样的数据结构被称作**场景图(scene graph)**。多数这类数据结构采用**空间划分**的思路，把三维空间以某形式划分为区域，使不与视椎体相交的区域能迅速被丢弃。
+
+## 12 几种剔除技术Culling
 
 - 视锥剔除Frustum Culling
 
@@ -1941,94 +1969,15 @@ vec2 IntegrateBRDF(float NdotV, float roughness)
 
 ​	反射探针像一个捕捉周围各个方向的球形视图的**摄像机**。将捕捉的图像将存储为cubemap，提供给具有反射材质的对象使用。
 
-# 后处理技术
+# 渲染特性
 
-## 1 LUT
+## 纹理
 
-​	本小节参考自：[【OpenGL学习】3DLUT颜色滤镜](https://blog.csdn.net/katherine_qj/article/details/112666379)。
-
-​	LUT(Look Up Table)指的是颜色查找表，是色彩映射关系的管理。
-
-​	例如：$rgb(0.2,0.3,0.4) = colorMatrix[0.2, 0.3, 0.4] = rgb(0.4, 0.5, 0.6)$
-
-​	colorMatrix实际是一种颜色映射关系，把提前定义好的对应关系存储在一张图中，这个图就叫做LUT。
-
-### 1) LUT优缺点
-
-- 优势
-
-​	RGB的颜色模式可以表示的颜色数量为256X256X256，如果要完全记录这种映射关系，需要大量的**内存**，并且在**计算时工作量巨大**。
-
-​	为了简化计算量，降低内存占用，3D LUT以一定的**采样间隔**，将相近的n种颜色采用一条映射记录并存储。
-
-​	采样步长n通常取4，这样只需要64 X 64 X 64种就可以表示256x256x256的内容。从而降低了存储映射关系所用的内存空间，充分利用GPU的计算能力。
-
-- 缺点
-
-​	LUT是以图像资源的方式存在，而且必须无压缩，因为也会占用内存空间，随着LUT数量的增多，会增加软件包体积的大小。
-
-​	LUT资源容易被破解，泄密。
-
-### 2) LUT空间划分
-
-​	以64x64x64的LUT为例。图在横、竖方向上被划分为8*8共64个方格，每个方格内的Blue分量为定值，64个方格代表B分量的64种映射。
-
-​	如下图所示，对于每个方格，B分量从左至右、从上至下从0增长至63。
-
-<img src=".\pic\cg_lut_b_comp.jpg" alt="cg_lut_b_comp" style="zoom:60%;" />
-
-​	每个方格内部又被分为**64x64**，横坐标代表R的64种分量，纵坐标代表G的64种分量：
-
-<img src=".\pic\cg_lut_rg_comp.jpg" alt="cg_lut_rg_comp" style="zoom:60%;" />
-
-### 3) LUT采样
-
-​	用一段着色器脚本来解释LUT的采样：
-
-```glsl
-//采样原始纹理的像素值
-vec4 textureColor =texture2D(uTexture, vTextureCoord);
-//采样出的像素值在[0, 1]中, 将b分量转换为[0, 63]的浮点数
-float blueColor = textureColor.b * 63.0;
-
-//确定R、G对应的小方格索引,
-//由于存在浮点误差, 所以要取两个B分量，从而得到两个R、G分量: quad1和quad2
-vec2 quad1; // floor()向下取整
-quad1.y = floor(floor(blueColor) / 8.0);      // G分量方格索引
-quad1.x = floor(blueColor) - (quad1.y * 8.0); // R分量方格索引
-
-vec2 quad2;// ceil()向上取整
-quad2.y = floor(ceil(blueColor) / 7.9999);
-quad2.x = ceil(blueColor) - (quad2.y * 8.0);
-
-float quadLen = 1.0 / 8.0;    //0.125
-float resolution = 8 * 8 * 8; //512, 单边像素分辨率
-vec2 texPos1, texPos2; 
-// 1) quad1.x * quadLen找到对应方块最左侧的横坐标
-// 2) (64-1) * textureColor.r将原始像素转换到[0, 63],得到value
-// 3) value除以64进行归一化, 然后((value/64) / 8)即得到当前点在小方格中的位置
-// 4) 1)和3)相加即得到当前像素在小方格中的坐标
-// 5) 最后加上0.5 / 512, 即把点放到64x64小方格的中心
-texPos1.x = (quad1.x * quadLen) + ((64-1) * textureColor.r) / (64.0 * 8.0) + 0.5 / 512;
-texPos1.y = (quad1.y * quadLen) + ((64-1) * textureColor.g) / (64.0 * 8.0) + 0.5 / 512;
-
-texPos2.x = (quad2.x * quadLen) + ((64-1) * textureColor.r) / (64.0 * 8.0) + 0.5 / 512;
-texPos2.y = (quad2.y * quadLen) + ((64-1) * textureColor.g) / (64.0 * 8.0) + 0.5 / 512;
-
-//采样LUT
-vec4 newColor1 = texture2D(s_LutTexture, texPos1);
-vec4 newColor2 = texture2D(s_LutTexture, texPos2);
-//得到转换后的像素值
-vec4 newColor = mix(newColor1, newColor2, fract(blueColor)); 
-```
-
-# 纹理
-
-## 1 纹理环绕
+### 1 纹理环绕
 
 ​	设置纹理坐标采样超出范围时，采取什么行为(重复/镜像重复/插值到边缘等)。
 
-## 2 纹理过滤
+### 2 纹理过滤
 
 ​	纹理过滤方式实质就是采样方式。决定如何将纹理像素映射到纹理坐标，分为临近过滤和线性过滤。
 
@@ -2046,11 +1995,11 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 ​	临近过滤会产生颗粒状的图案，线性过滤会产生更平滑的效果。
 
-## 3 纹素密度和mipmap
+### 3 纹素密度和mipmap
 
 ​	本小节参考自[游戏引擎架构10.1.2.5纹素密度和多级渐变纹理]()和[https://blog.csdn.net/qq_42428486/article/details/118856697](https://blog.csdn.net/qq_42428486/article/details/118856697)。
 
-### 1) 纹素密度
+#### 1) 纹素密度
 
 ​	当渲染一个满屏的四边形时，为该四边形贴上一张纹理，其尺寸刚好配合屏幕的分辨率。
 
@@ -2070,7 +2019,7 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 ​	当使用多级渐变纹理时，**图形硬件**会按照三角形和相机的距离，选择合适的渐变纹理级数。若纹理占据像素40x40的面积，那么硬件可能会选取64x64的纹理级数；若纹理占据像素10x10的面积，那么硬件可能会选取16x16的纹理级数。
 
-### 2) mipmap原理
+#### 2) mipmap原理
 
 ​	将纹理划分为不同大小分辨率的纹理图集，每次缩小1/2划分；
 
@@ -2078,7 +2027,7 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 ​	对**远处**的物体，采用**低分辨率**的纹理，对于**近处**的物体，采用**高分辨率**的纹理。
 
-### 3) mipmap的构建
+#### 3) mipmap的构建
 
 ​	预先创建原纹理大小2分之一的多级渐远纹理。在次级纹理其构建时，会使用线性过滤，使次级纹理得到平滑的过度效果。
 
@@ -2086,7 +2035,7 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 <img src=".\pic\cg_mipmap.png" alt="cg_mipmap" style="zoom:100%;" />
 
-### 4) mipmap优缺点
+#### 4) mipmap优缺点
 
 **优点**
 
@@ -2098,9 +2047,9 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 ​	占用显存。
 
-## 4 纹理压缩
+### 4 纹理压缩
 
-### 1) 原生纹理格式的性能瓶颈
+#### 1) 原生纹理格式的性能瓶颈
 
 ​	原生纹理格式在低端硬件设备或者说移动平台下，有两个问题需要解决：
 
@@ -2112,7 +2061,7 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 ​	带宽是发热的元凶，在渲染3D场景时，会有大量的贴图被传输到GPU，不经限制的话总线带宽很快就会成为瓶颈，严重的还会影响渲染性能。
 
-### 2) 理解压缩纹理格式
+#### 2) 理解压缩纹理格式
 
 ​	本小节参考自：[你所需要了解的几种纹理压缩格式原理](https://zhuanlan.zhihu.com/p/237940807)。
 
@@ -2132,17 +2081,51 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 ​	常见的纹理压缩格式有：ETC、DXT、PVRTC、ASTC等等。
 
-### 3) 使用压缩纹理
+#### 3) 使用压缩纹理
 
 - OpenGL支持上传压缩纹理，通过**glCompressedTexImage2D**指定压缩纹理格式，上传压缩纹理数据至CPU。
 - 压缩纹理在GPU中未被使用时，仍是**被压缩状态**。一旦纹理被采样，压缩的数据就会被**即时解码**。若纹理格式是被硬件支持，解码过程是**硬件加速**的，几乎不影响渲染。
 - 压缩纹理不是color-renderable：即不能作为渲染目标附着到fbo。因为向压缩纹理写数据被要求有即时的数据压缩操作，但是大部分压缩纹理算法是有损的，不支持改变部分数据。
 
-## 5 虚拟纹理
+### 5 虚拟纹理
 
-# 抗锯齿技术
+## 半透明渲染
 
-## 1 走样产生的原因
+​	本小节参考自[游戏中的透明渲染](https://zhuanlan.zhihu.com/p/149982810)。
+
+### 1 over混合
+
+​	over混合是**最普遍**的半透明渲染方式，其混合原理如下：
+
+$c_{o} = \alpha c_{s} + (1-\alpha)c_{d} = lerp(c_{s},c_{d},\alpha)$。
+
+​	$\alpha$是透明物体的透明度。$c_{s}$是透明物体的颜色，叫做源颜色或前景色。$c_{d}$是混合之前的颜色，叫目标色或背景色。
+
+​	使用over混合，需先渲染所有不透明物体，再将半透明物体按照**从远到近的距离**进行渲染。
+
+​	另一种和over混合相似的是**under混合**。
+
+### 2 顺序无关的透明渲染/OIT
+
+@todo
+
+### 3 使用半透明材质的要点
+
+- OverDraw
+
+​	因为半透明材质需要从远处到近处多次渲染，而不透明物体渲染每个像素只需要渲染一次。
+
+​	如果某个位置放了多层半透明材质，就需要渲染多次半透明材质，造成**OverDraw**的问题，使性能下降。在手机上，因为手机的TBDR架构，这种性能下降会更加明显。
+
+​	一般我们按照Opacity->AlphaCut->Transparent的顺序来渲染场景，这也是手机上渲染性能优化的一个要点。
+
+- Deffered Rendering
+
+​	在延迟渲染中，半透明材质无法实现Deffered Rendering的，只能通过前向渲染来实现半透明部分。
+
+## 抗锯齿技术
+
+### 1 走样产生的原因
 
 <img src=".\pic\cg_anti_aliasing.png" alt="cg_anti_aliasing" style="zoom:80%;" />
 
@@ -2156,7 +2139,7 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 <img src=".\pic\cg_aliasing.png" alt="cg_aliasing" style="zoom:80%;" />
 
-## 2 SSAA(Super Sampling AA)
+### 2 SSAA(Super Sampling AA)
 
 ​	以4xSSAA为例，假设最终屏幕输出的分辨率是800x600。
 
@@ -2164,9 +2147,9 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 ​	这种做法在数学上是最完美的抗锯齿。但是劣势也很明显，光栅化和着色的计算负荷都比原来多了4倍，**render target**的大小也涨了4倍。
 
-## 3 MSAA(Multi-Sampling AA)
+### 3 MSAA(Multi-Sampling AA)
 
-### 1) 实现原理
+#### 1) 实现原理
 
 ​	MSAA在进行coverage sample时，会使用**多个采样点**来判断三角形的遮蔽性。下图是4xMSAA，它会使用4个采样点来判断遮蔽性。
 
@@ -2174,7 +2157,7 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 <img src=".\pic\cg_msaa.png" alt="cg_msaa" style="zoom:80%;" align="left"/><img src=".\pic\cg_msaa_result.png" alt="cg_msaa_result" style="zoom:50%;" />
 
-### 2) MSAA对其他阶段的影响
+#### 2) MSAA对其他阶段的影响
 
 ​	MSAA开启后，不仅是颜色值会受到影响，**深度**和**模板**测试也能够使用多个采样点。
 
@@ -2186,7 +2169,7 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 ​	NV的CSAA，它把coverage sample和depth，stencil test分开了，就不会有上述特性。
 
-### 3) 适用场景
+#### 3) 适用场景
 
 ​	MSAA适用于前向渲染，与延迟渲染不兼容。
 
@@ -2194,7 +2177,7 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 ​	下述论文介绍了延迟渲染下的MSAA：[Multisample anti-aliasing in deffered rendering](https://diglib.eg.org/bitstream/handle/10.2312/egs20201008/021-024.pdf)。
 
-## 4 FXAA
+### 4 FXAA
 
 ​	本小节参考自[主流抗锯齿方案详解（三）FXAA](https://zhuanlan.zhihu.com/p/431384101)。
 
@@ -2212,7 +2195,7 @@ vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 
 ​	**FXAA Console**：注重抗锯齿速度，相对性能友好。主要面向于 PS3，抗锯齿质量不高，得到的图像非常的模糊。
 
-### 1) FXAA Quality
+#### 1) FXAA Quality
 
 - 边界判断：确定是否需要混合
 
@@ -2310,7 +2293,7 @@ float4 Result = tex2D(_MainTex, UV + PixelStep * PixelBlend);
 
 <img src=".\pic\cg_fxaa_optimize.png" alt="cg_fxaa_optimize" style="zoom:70%;" />
 
-### 2) FXAA Console
+#### 2) FXAA Console
 
 ​	FXAA Quality需要的采样次数比较多，FXAA Console每个点只需要**五次采样**。
 
@@ -2376,11 +2359,11 @@ if(Luminance(Result2.xyz) > MinLuma && Luminance(Result2.xyz) < MaxLuma) {
 
  	Console 版本每个像素点最多只需要进行9次采样，比 Quality 版本要少很多，当然得到的效果也差很多，整体看起来会比较模糊。
 
-# ShadowMap
+## ShadowMap
 
-## 1 基本概念
+### 1 基本概念
 
-### 1) 深度贴图的格式、精度和分辨率
+#### 1) 深度贴图的格式、精度和分辨率
 
 - OpenGL中DepthMap格式可以为`GL_DEPTH_COMPONENT24`、`GL_DEPTH_COMPONENT32`等等，数值格式为`float`；增加深度通道的位数可以提高精度，解决深度冲突；
 
@@ -2390,7 +2373,7 @@ if(Luminance(Result2.xyz) > MinLuma && Luminance(Result2.xyz) < MaxLuma) {
 
 - 接近 near 平面，z值越密；距离越远，z值越稀，这样距离照相机越近精度越高。
 
-### 2) 深度的非线性
+#### 2) 深度的非线性
 
 <img src="./pic/cg_depth_non_linear.png" alt="cg_depth_non_linear" style="zoom:65%;" />
 
@@ -2398,7 +2381,7 @@ if(Luminance(Result2.xyz) > MinLuma && Luminance(Result2.xyz) < MaxLuma) {
 
 ​	d：z经过透视变换、透视除法后在ndc空间的深度值。
 
-#### 2.1) z -> d为何非线性
+##### 2.1) z -> d为何非线性
 
 - 实用性：计算机存储精度有限，离摄像机越远的物体，信息越少，对画面的贡献也越少，没必要为其提供高精度。所以深度值在靠近近平面精度越高，越远精度越低，是合理的设定。
 
@@ -2408,7 +2391,7 @@ if(Luminance(Result2.xyz) > MinLuma && Luminance(Result2.xyz) < MaxLuma) {
 
   上图中三维空间点$(x_{1},z_{1})$和$(x_{2},z_{2})$投影到z为-e的平面上得到两点$(p_{1},-e)$和$(p_{2},-e)$。在投影点间取几个等距点还原，可以看到还原的三维点并不等距。
 
-#### 2.2) 线性化深度
+##### 2.2) 线性化深度
 
 $z_{linear}=\frac{z-n}{f-n}$
 
@@ -2416,7 +2399,7 @@ $z=\frac{2nf}{f+n-(2d-1)*(f-n)}$
 
 ​	d：深度图中取出的数据；n、f：近平面和远平面的距离；
 
-### 3) 深度值和顶点属性插值
+#### 3) 深度值和顶点属性插值
 
 ​	在使用光栅化的图形学方法中，法线，颜色，纹理坐标这些属性通常是绑定在图元的顶点上。
 
@@ -2438,7 +2421,7 @@ $\frac{1}{Z_{s}} = \frac{1}{Z_{1}}(1-s) + \frac{1}{Z_{2}}s$
 
 ​	有了透视正确的顶点位置后，由于顶点属性和位置在3维空间中是线性相关的，因此也可利用上式求出顶点属性的正确插值。
 
-### 4) 深度冲突
+#### 4) 深度冲突
 
 ​	DepthBuffer是非线性的，因此在远离摄像机的地方，由于精度不足，可能造成深度冲突。
 
@@ -2449,11 +2432,11 @@ $\frac{1}{Z_{s}} = \frac{1}{Z_{1}}(1-s) + \frac{1}{Z_{2}}s$
 - 略微在场景中移动物体坐标，错开那些靠的很近的物体(实用，基本能解决问题)；
 - Offset语法【**待理解**】
 
-## 2 ShadowMap的缺陷
+### 2 ShadowMap的缺陷
 
-### 1) 阴影失真(Shadow Acne)
+#### 1) 阴影失真(Shadow Acne)
 
-#### 1.1) 阴影失真原因
+##### 1.1) 阴影失真原因
 
 ​	原因：阴影贴图的分辨率过小，导致多个点顶点采样到同一个阴影贴图纹理。
 
@@ -2465,7 +2448,7 @@ $\frac{1}{Z_{s}} = \frac{1}{Z_{1}}(1-s) + \frac{1}{Z_{2}}s$
 
 ​	理论上a、b、c、d四个点都应该被点亮，但是由于上述的采样关系，a、d被点亮，b、c被认为在阴影中，从而产生了阴影失真。
 
-#### 1.2) Shadow Bias
+##### 1.2) Shadow Bias
 
 ​	在判定阴影的时候，添加一个偏移，在消除阴影失真。
 
@@ -2474,7 +2457,7 @@ float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
 float shadow = currentDepth - bias > closestDepth  ? 1.0 : 0.0; 
 ```
 
-#### 1.3) Shadow Bias产生Peter Panning
+##### 1.3) Shadow Bias产生Peter Panning
 
 ​	在深度贴图渲染阶段，使用正面剔除来消除Peter Panning：
 
@@ -2488,7 +2471,7 @@ RenderSceneToDepthMap();
 glCullFace(GL_BACK); // don't forget to reset original culling face
 ```
 
-### 2) 阴影边缘过硬：PCF柔化
+#### 2) 阴影边缘过硬：PCF柔化
 
 ​	PCF(Percentage-Closer Filtering)通过采样周围的纹素，柔滑过硬的边缘。
 
@@ -2515,7 +2498,7 @@ shadow /= 9.0;
 3. 因为每一次阴影计算只能得到01两种值，所以预先对Shadowmap进行过滤是没有意义的
 4. 计算阴影的时间复杂度是k*n，其中k是采样次数，n是片段数量
 
-## 3 级联阴影映射(Cascaded Shadow Map)
+### 3 级联阴影映射(Cascaded Shadow Map)
 
 ​	本小节主要参考[https://zhuanlan.zhihu.com/p/388459633?utm_id=0](https://zhuanlan.zhihu.com/p/388459633?utm_id=0)，Nvidia的论文看[这里](https://developer.download.nvidia.cn/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf)。
 
@@ -2531,22 +2514,22 @@ shadow /= 9.0;
 
 ​	离相机近的地方使用精细的阴影贴图，离相机远的地方使用粗糙的阴影贴图，这样不仅优化了阴影效果，还保证了渲染效率。
 
-### 1) CSM流程
+#### 1) CSM流程
 
 - 摄像机视锥体分割；
 - 子视锥体包围盒计算；
 - 光源投影矩阵计算；
 - ShadowMap贴图渲染。
 
-### 2) 视锥体分割
+#### 2) 视锥体分割
 
 <img src=".\pic\cg_partition_frustum.png" alt="cg_partition_frustum" style="zoom:60%;" />
 
-## 4 点光源阴影贴图
+### 4 点光源阴影贴图
 
-### 1) CubeMap(万向阴影贴图)
+#### 1) CubeMap(万向阴影贴图)
 
-#### 1.1) 写入深度图
+##### 1.1) 写入深度图
 
 - 顶点着色器：将mesh转换到世界空间中，作为几何着色器的输入；
 
@@ -2556,7 +2539,7 @@ shadow /= 9.0;
 
 - 片元着色器：光栅化上述不同光照空间的图元后，片元着色器中根据几何着色器传入的world position和常量光源位置，计算距离，写入不同面的深度缓冲。
 
-#### 1.2) CubeMap采样
+##### 1.2) CubeMap采样
 
 ```glsl
 vec3 sampleVec = fragPos - lightPos; 
@@ -2567,36 +2550,36 @@ float closestDepth = texture(depthMap, sampleVec).r;
 
 ​	深度缓冲是以光源为中心写入的，因此可以采样到包围光源所有方向的深度值。
 
-#### 1.3) 多个点光源
+##### 1.3) 多个点光源
 
-##### 1.3.1) 阴影贴图
+###### 1.3.1) 阴影贴图
 
 ​	使用**CubeMapArray**作为阴影贴图。
 
 ​	结合几何着色器，一个mesh使用一个drawcall，就可更新所有点光源的阴影贴图。
 
-##### 1.3.2) 着色
+###### 1.3.2) 着色
 
 ​	在延迟渲染中，使用for循环遍历所有点光源，叠加点光源的光照效果。
 
 ​	通过每个点光源的索引，在CubeMapArray找到对应的阴影贴图，绘制阴影。
 
-##### 1.3.3) 优化
+###### 1.3.3) 优化
 
 - 不是每帧都需要更新阴影贴图，如场景是禁止的时候。
 - 引擎中，每个光源都有CastShadow属性。若一个光源不CastShadow，那么它就不需要更新阴影贴图，也不需要在着色时参与阴影计算。
 
-### 2) 双抛物面环境映射
+#### 2) 双抛物面环境映射
 
 ​	参考这里[详解双抛物面环境映射](https://zhuanlan.zhihu.com/p/40784734)。
 
-## 5 阴影贴图图集(Shadow Map Atlas)
+### 5 阴影贴图图集(Shadow Map Atlas)
 
 ​	参考这里[DOOM (2016) - Graphics Study](https://www.adriancourreges.com/blog/2016/09/09/doom-2016-graphics-study/)。
 
-# LightMap
+## LightMap
 
-## 静态LightMap
+### 静态LightMap
 
 ​	本小节参考自：[Light烘培原理](https://blog.csdn.net/zjull/article/details/50924429)。
 
@@ -2629,13 +2612,13 @@ Output.Position.xy = Input.Texcoord * float2(2, -2) + float2(-1, 1);
 Output.Position.w  = 1;
 ```
 
-# 骨骼动画
+## 骨骼动画
 
-## 1 基本原理
+### 1 基本原理
 
 ​	本小节参考自：[浅谈骨骼动画技术原理系列](https://zhuanlan.zhihu.com/p/431446337)。
 
-### 1) 主要概念
+#### 1) 主要概念
 
 ​	骨骼动画：在 mesh 中放置若干骨骼，**骨骼的运动带动 mesh 的运动**。动画师只需要操作骨骼，就可以带动 mesh 完成动画的编辑。
 
@@ -2647,7 +2630,7 @@ Output.Position.w  = 1;
 
 <img src=".\pic\cg_skeletal_joints_model.png" alt="cg_skeletal_joints_model" style="zoom:50%;" />
 
-### 2) 工业界制作流程
+#### 2) 工业界制作流程
 
 一，骨骼与标准姿势(T-pose)的**绑定与蒙皮**(binding, skinning)；
 
@@ -2663,7 +2646,7 @@ Output.Position.w  = 1;
 
 ​	**在关键帧编辑骨骼姿态，在非关键帧插值骨骼姿态，在所有帧上进行蒙皮**。
 
-### 3) 骨骼动画涉及的主要坐标系
+#### 3) 骨骼动画涉及的主要坐标系
 
 **世界坐标系**：关节模型的**树根**的坐标代表了对应的物体在世界坐标系下的坐标。
 
@@ -2671,7 +2654,7 @@ Output.Position.w  = 1;
 
 **骨架(物体)坐标系**：**树根坐标为原点**的坐标系，实际是树根节点的**关节坐标系**。
 
-### 4) 骨骼动画涉及的坐标变换
+#### 4) 骨骼动画涉及的坐标变换
 
 - 绑定姿态：美术在建模软件中定义的骨骼**默认姿态**，绑定空间可理解为**模型本地空间**。
 
@@ -2683,9 +2666,9 @@ Output.Position.w  = 1;
 
 - Mesh Transform(蒙皮变换矩阵)：Mesh Transform = Global Transform x OffsetMatrix。顶点应用了蒙皮矩阵后，就确定了其在绑定空间下的最终位置。
 
-## 2 关节模型
+### 2 关节模型
 
-### 1) 关节控制原理
+#### 1) 关节控制原理
 
 ​	通过控制**每个关节**的坐标，控制整个**骨架的姿态**，进而控制的角色模型。
 
@@ -2699,7 +2682,7 @@ Output.Position.w  = 1;
 
 - 更易于进行动画数据压缩、动作融合等。
 
-### 2) 关节中的数据
+#### 2) 关节中的数据
 
 <img src=".\pic\cg_joint_model.png" alt="cg_joint_model" style="zoom:50%;" />
 
@@ -2709,7 +2692,7 @@ Output.Position.w  = 1;
 
 ​	关节模型的根节点的坐标：这对应了骨架坐标系到世界坐标系的**平移变换**。
 
-## 3 正向动力学(Forward Kinematics)
+### 3 正向动力学(Forward Kinematics)
 
 ​	正向运动学解决的问题：**给定关节模型和每个节点相对父节点的变换矩阵，计算关节坐标到世界坐标的变换矩阵**。
 
@@ -2735,11 +2718,11 @@ $M_{i-to-world} = R_{root}T_{root}R_{1}T_{1}R_{2}T_{2}...R_{i-1}T_{i-1}R_{i}T_{i
 
 ​	注意，在动画插值的时候，平移、缩放矩阵能够插值，但是旋转矩阵不行，因此，骨骼动画中存储的都是**四元数**。
 
-## 4 逆向动力学(Inverse Kinematics)
+### 4 逆向动力学(Inverse Kinematics)
 
-## 5 CPU蒙皮 vs GPU蒙皮
+### 5 CPU蒙皮 vs GPU蒙皮
 
-### 1) CPU蒙皮
+#### 1) CPU蒙皮
 
 - 概念
 
@@ -2765,7 +2748,7 @@ $M_{i-to-world} = R_{root}T_{root}R_{1}T_{1}R_{2}T_{2}...R_{i-1}T_{i-1}R_{i}T_{i
 
 ① 多线程Skinning。
 
-### 2) GPU蒙皮
+#### 2) GPU蒙皮
 
 ​	GPU蒙皮(GPU Skinning)是在CPU上计算蒙皮矩阵，然后将矩阵上传，在GPU侧进行蒙皮。
 

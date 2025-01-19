@@ -625,7 +625,7 @@ BVHBuildNode* BVHAccel::recursiveBuild(std::vector<Object*> objects)
 
 ​	下图展示了数据在pipeline中的流转：
 
-<img src="D:\Code\0_MyCode\MyDocuments\Notes\CG\pic\cg_pipeline_data_transform.png" alt="cg_pipeline_data_transform" style="zoom:80%;" />
+<img src="E:\MyDocuments\Notes\CG\pic\cg_pipeline_data_transform.png" alt="cg_pipeline_data_transform" style="zoom:80%;" />
 
 ## 2 坐标变换
 
@@ -1033,6 +1033,38 @@ $\frac{Y_{p1} -(-1)}{1-(-1)} = \frac{Y_{p2}-Bottom_{prj}}{Top_{prj}-Bottom{prj}}
 - GPU遮挡剔除GPU Occlusion Culling
 
 ​	Unity6中的高级功能，通过GPU在运行时处理遮挡剔除。
+
+## 13 伽马校正
+
+### 1) 视觉响应的非线性
+
+​	阴极射线管(CRT)显示屏往往有**非线性**的亮度响应曲线：
+
+​	送往CRT的**RGB**以**线性递增**，但屏幕显示结果从**人眼感知**上是**非线性的**。
+
+​	视觉上，较暗的区域显得比理论上还暗。
+
+### 2) 数学建模
+
+​	CRT显示屏的伽马响应曲线可按如下建模：
+
+$V_{out} = V_{in}^{\gamma}$，其中$V_{in}$是线性送入的RGB。
+
+​	综上，要校正此情况，颜色被送入CRT显示屏前，需要进行一个**逆变换**。
+
+### 3) gamma校正
+
+​	通常CRT显示屏的伽马值为$\gamma_{CRT} = 2.2$，因此伽马校正值为$\gamma_{corr} = 1 / 2.2 = 0.455$。
+
+​	下图中，gamma correction曲线为gamma**编码曲线**，CRT gamma曲线为**解码曲线**。
+
+<img src="pic\cg_gamma_corr.png" alt="cg_gamma_corr" style="zoom:80%;" />
+
+### 4) 纹理和gamma校正
+
+​	纹理贴图所使用的位图通常**已经进行了gamma校正**。
+
+​	高质量的渲染引擎需要考虑这种情况，在渲染前，对纹理进行**gamma解码**。最终，在常见渲染完成后，**再进行gamma编码**。
 
 # PBR
 
@@ -2770,19 +2802,19 @@ $M_{i-to-world} = R_{root}T_{root}R_{1}T_{1}R_{2}T_{2}...R_{i-1}T_{i-1}R_{i}T_{i
 
 # 渲染性能
 
-## 1 常规性能问题思路
+## 常规性能问题思路
 
 <img src=".\pic\cg_performance.png" alt="cg_performance" style="zoom:90%;" />
 
-### 1) Draw Call
+### 1 Draw Call
 
 ​	① 把数据加载到显存中：把网格和纹理等数据从硬盘加载到显存中；
 ​	② 设置渲染状态；
 ​	③ 调用Draw Call：准备好上述工作后，CPU就调用一个渲染命令(Draw Call)来告诉GPU执行渲染。
 
-### 2) 批处理
+### 2 批处理
 
-#### 2.1) 静态批处理
+#### 1) 静态批处理
 
 <img src=".\pic\cg_performance_static_patch.png" alt="cg_performance_static_patch" style="zoom:70%;" />
 
@@ -2792,7 +2824,7 @@ $M_{i-to-world} = R_{root}T_{root}R_{1}T_{1}R_{2}T_{2}...R_{i-1}T_{i-1}R_{i}T_{i
 
 ​	静态批处理节约了**binding切换**、**绘制状态设置**的消耗，但可能会增大vertex buffer(若使用重复模型，会把相同的顶点拷贝到v-buffer中)。
 
-#### 2.2) 动态批处理
+#### 2) 动态批处理
 
 ​	对于**正在视野中**的符合条件的动态对象在一个Draw call内绘制，所以**会降低Draw Calls**的数量。
 
@@ -2800,7 +2832,7 @@ $M_{i-to-world} = R_{root}T_{root}R_{1}T_{1}R_{2}T_{2}...R_{i-1}T_{i-1}R_{i}T_{i
 
 <img src=".\pic\cg_performance_dynamic_patch.png" alt="cg_performance_dynamic_patch" style="zoom:100%;" />
 
-### 3) Instancing
+### 3 Instancing
 
 ​	在使用**相同材质、相同Mesh**的情况下，使用**Uniform Buffer**将所有实例渲染所需的属性，如位置、缩放、uv偏移、等信息保存在显存中，然后使用**一次DrawCall**将**一个模型**送入管线，使用GPU Instancing来执行批量绘制。
 
@@ -2808,7 +2840,7 @@ $M_{i-to-world} = R_{root}T_{root}R_{1}T_{1}R_{2}T_{2}...R_{i-1}T_{i-1}R_{i}T_{i
 
 ​	GPU Instancing可以**规避合并Mesh导致的内存与性能上升**的问题，但场景中所有符合该合批条件的实例的属性信息每帧都必须更新到Uniform Buffer中。
 
-### 4) 剔除技术
+### 4 剔除技术
 
 ​	光栅化管线中，存在几个剔除阶段。
 
@@ -2826,11 +2858,11 @@ $M_{i-to-world} = R_{root}T_{root}R_{1}T_{1}R_{2}T_{2}...R_{i-1}T_{i-1}R_{i}T_{i
 
 ​	像素处理阶段包含模板测试、深度测试等像素剔除操作，是在整个管线的尾端。故仍然会浪费前部分的GPU资源。
 
-#### 4.1) CPU视锥体剔除
+#### 1) CPU视锥体剔除
 
-## 2 使用自定义内存块
+## 使用自定义内存块
 
-### 1) 原因
+### 1 原因
 
 ​	通过malloc()/free()或C++的全局new/delete运算符动态分配内存——又称作堆分配——通常是很慢的，有如下原因：
 
@@ -2878,7 +2910,7 @@ $M_{i-to-world} = R_{root}T_{root}R_{1}T_{1}R_{2}T_{2}...R_{i-1}T_{i-1}R_{i}T_{i
 
 ​	综上规则有：高效能代码体积越小越好，且避免在代码段落中调用函数。
 
-### 2) 自定义分配器
+### 2 自定义分配器
 
 - 堆栈分配器
 
@@ -2902,14 +2934,97 @@ $M_{i-to-world} = R_{root}T_{root}R_{1}T_{1}R_{2}T_{2}...R_{i-1}T_{i-1}R_{i}T_{i
 
 ​	分配一个内存，就从自由链表中取出一个元素。释放一块内存，就把元素归还给链表。
 
-## 3 帧同步和状态同步
+## 帧同步和状态同步
 
-## 4 vs、fs开销大，如何优化
+## vs、fs开销大，如何优化
 
-## 5 PBR 材质贴图多，纹理槽位不够应该怎么处理
+## PBR 材质贴图多，纹理槽位不够应该怎么处理
 
 - 合并多个属性到一个通道，比如roughness和metallic可以存在 8 bit 纹理的高低4 bit上。
 - 虚拟纹理，将小贴图合并成大贴图，按需调入。
+
+# ECS
+
+## 1 ECS架构
+
+​	ECS，Entity Component System：
+
+- Entity：指向数据的handle。
+- Component：数据，按**类型**分块放到内存中。
+- System：处理数据的业务逻辑。读取数据，处理数据，再把数据写回去。
+
+## 2 Unity的ECS实现
+
+### 1) 基础结构
+
+- **Archetype**：World中含有相同类型Component的所有Entity集合。
+- **Chunk**：归一化的内存块，存储某一种Archetype的所有实现。
+
+<img src="pic\cg_ecs_archetype_chunk.png" alt="cg_ecs_archetype_chunk" style="zoom:60%;" />
+
+- **Structural Change Operation**：
+
+  若Entity实例e包含Component A和B，其被存储在Chunk **Archetype_A_B**中。
+
+  若为e添加了Component C，那么该Entity的**存储位置**会被转移：从Chunk **Archetype_A_B**转移到Chunk **Archetype_A_B_C**。
+
+  这就是**Structural Change Operation**。
+
+  常见的Structural Change Operation包含：create entity、destroy entity、addComponent、removeComponent。
+
+### 2) Chunk
+
+- Chunk内存分布
+
+  下图是Archetype_A_B_C对应的Chunk分布：
+
+  该Chunk包含**四个数组**：Entity ID、Component A、B和C，数组长度被限制到了128。当前，该Chunk存储了3个Entity
+
+  <img src="pic\cg_ecs_chunk_layout.png" alt="cg_ecs_chunk_layout" style="zoom:60%;" />
+
+- add和remove Entity
+
+  若**移除**了Chunk中某个slot，数组尾部的Entity会被**移动**，来填充当前的slot。
+
+  若向Chunk**插入**新的Entity，EntityMgr会寻找Chunk中**首个空闲的slot**，作为插入的位置。
+
+- Entity查找
+
+​	为了快速索引Entity，EntityMgr需要存储Entity的元数据数组。
+
+​	metadata通常包含① Chunk指针；② Entity在Chunk内部的索引。
+
+<img src="pic\cg_ecs_entity_metadata.png" alt="cg_ecs_entity_metadata" style="zoom:80%;" />
+
+- Entity的版本信息(**version number**)
+
+  当一个slot对应的entity被destoy，若该slot又被重用，其version number就应该加一，用于区分之前该slot上的entity。
+
+## 3 ECS的优势
+
+
+
+- ECS是面向数据编程，是对机器友好的；面向对象是对人类友好的。
+
+- ECS思考如何存储、处理、流转数据。
+
+- 缓存友好，读写快
+
+  下图展示CPU会从多级缓存和内存中读取数据**缓存行**，以及面向对象的内存分布：
+
+  <img src="E:\MyDocuments\Notes\CG\pic\cg_ecs_cpu_read_mem.png" alt="cg_ecs_cpu_read_mem" style="zoom:60%;" align="left" /><img src="E:\MyDocuments\Notes\CG\pic\cg_ecs_oop.png" alt="cg_ecs_oop" style="zoom:50%;" />
+
+  OOP的GameObjects在内存中是零散的，想要取出所有黄色的数据，是很困难的。
+
+  在DOP中，所有黄色数据，都在一个内存数组中。
+
+  有如下例子：在oop中，Transform定义如左图；在ecs架构下，Transform被拆分成右图：
+
+  <img src="pic\cg_ecs_oop_transform.png" alt="cg_ecs_oop_transform" style="zoom:90%;" align="left"/><img src="pic\cg_ecs_dop_transform.png" alt="cg_ecs_dop_transform" style="zoom:60%;" />
+
+- 数据方便并行处理。
+
+- 数据可以按SOA的方式存储，利于SIMD优化。
 
 # 硬件相关
 

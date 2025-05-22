@@ -6,8 +6,24 @@ typora-root-url: pic
 
 ## 快捷键
 
+场景
+
 - ctrl + d：复制actor；
 - alt + 移动gizmo：复制actor到指定位置；
+
+蓝图
+
+- home：将选中的蓝图聚焦至视口中间；
+
+## 降低项目默认消耗
+
+- 取消全局光照
+
+  <img src="/UE_cancel_gi.png" alt="UE_cancel_gi" style="zoom:80%;" />
+
+- 设置反走样方案
+
+  <img src="/UE_set_anti_aliase.png" alt="UE_set_anti_aliase" style="zoom:80%;" />
 
 # Blueprint
 
@@ -38,13 +54,17 @@ typora-root-url: pic
 
 <img src="/UE_level_blue_print_simple_sample.png" alt="UE_level_blue_print_simple_sample" style="zoom:70%;" />
 
-## 2 蓝图类
+## 2 命名规则
+
+<img src="/UE_naming_rule.png" alt="UE_naming_rule" style="zoom:70%;" />
+
+## 3 蓝图类
 
 ​	如下步骤可为常见中的Actor创建一个蓝图类：
 
 <img src="/UE_create_bp_class.png" alt="UE_create_bp_class" style="zoom:60%;" />
 
-## 3 蓝图函数
+### 2.1 蓝图函数
 
 ​	Functions execute blocks of blueprints that makes our game do things。
 
@@ -64,7 +84,7 @@ typora-root-url: pic
   此时，在pure函数就**没有执行引脚**了：
   <img src="/UE_pure_function.png" alt="UE_pure_function" style="zoom:60%;" />
 
-## 4 成员函数
+### 2.2 成员函数
 
 ​	成员函数不在关卡的蓝图上，而在某个特定的**蓝图类**中。蓝图类的成员函数对面向对象编程很重要。
 
@@ -73,6 +93,10 @@ typora-root-url: pic
 - Self：A node available in member function, always points to the current instance。Self是个节点，用于在成员函数中，获取当前实例。
 - 创建成员函数：
   <img src="/UE_make_member_function.png" alt="UE_make_member_function" style="zoom:60%;" />
+
+### 2.3 蓝图函数库
+
+​	将函数放到蓝图函数库(一种资产)中，让每个蓝图都能访问。
 
 # UE基础
 
@@ -302,6 +326,61 @@ typora-root-url: pic
 
   此阶段会将半透明的渲染纹理混合到最终的场景颜色中。
 
+## 5 UE的材质
+
+​	本小节参考自：[UE：材质系统](https://mp.weixin.qq.com/s?__biz=MzA5MDcyOTE5Nw==&mid=2650549692&idx=1&sn=d23db44e95de518437a4f90dff057baf&chksm=880fb23ebf783b2860456c2dd3104236d47b0ecf562a058f4f75096f12580291a77b24b35626&scene=178&cur_album_id=2518511104424198145&search_click_id=#rd)。
+
+​	UE的材质定义为：Controlling the appearance of surfaces in the world using shaders.
+
+​	材质的三大要素为：
+
+- UMaterial类：对应材质编辑器中的资源属性。
+- FMaterialResource类：依据`RHIFeatureLevel`(DirectX/Vulkan/Metal/OpenGL ES等)和材质质量`EMaterialQualityLevel`(高/中/低)，将UMaterial生成HLSL代码。
+- FMaterialRenderProxy类：将编译后的shader传递给渲染层，通过材质函数完成渲染结果。
+
+​	其中，UMaterial面向艺术家，FMaterialResource面向机器，FMaterialRenderProxy产生最终显示效果，面向人。
+
+​	注意，UMaterial : FMaterialResource : FMaterialRenderProxy是1 : N : 1的关系。
+
+# GamePlay
+
+## 1 GameMode
+
+- 自定义GameMode
+
+  使用UE提供的GameModeBase作为基类，自定义GameMode。
+
+  通常自定义BP_GameModeBase，作为自定义GameMode的**基类**。
+
+  不同Level派生不同的BP_GameModeXXX子类。
+
+- 应用GameMode
+
+  完成GameMode编写后，在**WorldSetting**中为当前Level指定GameMode。
+
+## 2 创建动画蓝图角色
+
+- 使用蓝图类Character作为基类，创建角色蓝图基类BP_CharacterBase。
+
+  再以BP_CharacterBase为基类，创建角色子类，如BP_Ninja：
+  <img src="/UE_BP_Character.png" alt="BP_Character" style="zoom:80%;" />
+
+- 打开角色蓝图，更新网格体；根据胶囊体更细网格位置和胶囊体大小；根据前进方向调整网格朝向。
+
+- 创建混合空间，设置动画混合。
+
+- 创建动画蓝图，将上一步创建的混合空间，设置给蓝图，作为动画输出：
+
+  <img src="/UE_ABP_Character_AnimFlow.png" alt="ABP_Character_AnimFlow" style="zoom:80%;" />
+
+- 在动画蓝图的EventGraph中，设置驱动动画蓝图的逻辑：
+
+  <img src="/UE_ABP_EventGraph.png" alt="ABP_EventGraph" style="zoom:90%;" />
+
+- 在角色蓝图中，将角色的动画模式设置为：使用蓝图，并设置刚创建的动画蓝图。
+
+  ![UE_UseAnimationBP](/UE_UseAnimationBP.png)
+
 # UE C++
 
 ## 1 UE C++基础
@@ -344,6 +423,3 @@ typora-root-url: pic
 - PlayerStart
   PlayerStart是C++类，表示：游戏开始时，玩家的**起始位置**。
   游戏中，点击**F8**，可以暂停游戏，脱离当前Player在世界中漫游。
-
-
-

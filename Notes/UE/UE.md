@@ -10,6 +10,7 @@ typora-root-url: pic
 
 - ctrl + d：复制actor；
 - alt + 移动gizmo：复制actor到指定位置；
+- ctrl + p：打开资产；
 
 蓝图
 
@@ -25,7 +26,7 @@ typora-root-url: pic
 
   <img src="/UE_set_anti_aliase.png" alt="UE_set_anti_aliase" style="zoom:80%;" />
 
-# Blueprint
+# 蓝图基础
 
 ## 1 基础概念
 
@@ -342,23 +343,16 @@ typora-root-url: pic
 
 ​	注意，UMaterial : FMaterialResource : FMaterialRenderProxy是1 : N : 1的关系。
 
-# GamePlay
+# 组件Component
 
-## 1 GameMode
+​	组件一般划分为**场景组件**和**Actor组件**。
 
-- 自定义GameMode
+- 场景组件：提供**被渲染**的能力，带有Transform属性，派生自**USceneComponent**，USceneComponent实际派生自UActorComponent。
+- Actor组件：提供**业务逻辑**，没有Transform属性，派生自**UActorComponent**，UActorComponent派生自UObject。
 
-  使用UE提供的GameModeBase作为基类，自定义GameMode。
+# 动画蓝图
 
-  通常自定义BP_GameModeBase，作为自定义GameMode的**基类**。
-
-  不同Level派生不同的BP_GameModeXXX子类。
-
-- 应用GameMode
-
-  完成GameMode编写后，在**WorldSetting**中为当前Level指定GameMode。
-
-## 2 创建动画蓝图角色
+## 1 创建动画蓝图角色
 
 - 使用蓝图类Character作为基类，创建角色蓝图基类BP_CharacterBase。
 
@@ -380,6 +374,68 @@ typora-root-url: pic
 - 在角色蓝图中，将角色的动画模式设置为：使用蓝图，并设置刚创建的动画蓝图。
 
   ![UE_UseAnimationBP](/UE_UseAnimationBP.png)
+
+## 2 动画优化
+
+### 2.1 优化AI旋转
+
+- 原因
+
+  默认，AI的旋转由Controller决定。Controller的tick周期约为0.1s，因此并不平滑：
+
+  <img src="/UE_ControllerYaw.png" alt="UE_ControllerYaw" style="zoom:80%;" />
+
+- 解决方案
+
+  **取消上述勾选**，在角色蓝图中，选择如下:
+
+  <img src="/UE_UseControllerRotation.png" alt="UE_UseControllerRotation" style="zoom:80%;" />
+
+  其意思是：当Contoller的朝向更新时，角色蓝图会用设置的**旋转速度**和**新的朝向**，实施一个平滑的旋转。
+
+# 物理系统
+
+## 1 三种碰撞响应
+
+​	UE中物理系统的碰撞响应有三种类型：**阻挡**、**重叠**、**忽略**。三者的响应关系如下：
+
+- 若两个物体碰撞类型**都是阻挡**，则会进行**物理模拟**；
+- 若一个物体是重叠，另一个无论是**重叠/阻挡**，会产生**碰撞事件**，但不会进行物理反馈；
+- 若一个物体是忽略，另一个无论是**忽略/重叠/阻挡**，不会产生碰撞事件，也不会进行物理反馈。
+
+## 2 自定义对象类型和碰撞预设
+
+- 创建对象类型：
+
+  <img src="/UE_ObjectChannel.png" alt="UE_ObjectChannel" style="zoom:90%;" />
+
+- 创建碰撞预设：
+
+  <img src="/UE_CollisionPreset.png" alt="UE_CollisionPreset" style="zoom:70%;" />
+
+- 应用到角色蓝图：
+
+  <img src="/UE_BP_Character_Collsion_Preset.png" alt="UE_BP_Character_Collsion_Preset" style="zoom:80%;" />
+
+  在角色蓝图中，胶囊体组件和网格体组件都有碰撞预设。
+
+  将Mesh的碰撞预设设置为None，把外部胶囊体的碰撞预设设置为目标类型，从而可以节约一点性能。
+
+# GamePlay
+
+## 1 GameMode
+
+- 自定义GameMode
+
+  使用UE提供的GameModeBase作为基类，自定义GameMode。
+
+  通常自定义BP_GameModeBase，作为自定义GameMode的**基类**。
+
+  不同Level派生不同的BP_GameModeXXX子类。
+
+- 应用GameMode
+
+  完成GameMode编写后，在**WorldSetting**中为当前Level指定GameMode。
 
 # UE C++
 

@@ -28,6 +28,101 @@
 
 ​	特性：① 静态多态(函数重载、模版)；② 动态多态：虚函数。
 
+# 编译&&链接
+
+## 1 编译&&链接对函数的处理
+
+- 编译阶段
+
+  检查函数调用是否正确，是否有声明。
+
+  若函数有声明，在此阶段，编译器会认为该函数肯定在某位置被定义了。
+
+- 链接阶段
+
+  把所有目标文件合并成一个可执行程序。
+
+  如果一个函数在**所有的目标文件**中，都没有找到实现，链接器就会报错。
+
+- 若一个函数声明了，但没有定义
+
+  - 若该函数没有被使用
+
+    编译、链接都没有问题。
+
+  - 若函数被使用了
+
+    编译没有问题，可以生成.o文件。链接会报错，因为所有.o都找不到它。
+
+  - 若函数被声明为**inline**
+
+    在编译期，函数会被插入到调用处，避免函数调用的开销。因此该情况编译阶段就会报错。
+
+  - 若函数是模版函数
+
+    模版函数会在编译期实例化，根据模版参数**生成具体代码**。因此会在编译期报错。
+
+## 2 头文件引用相关问题
+
+- 循环包含，导致编译出错：
+
+  ```c++
+  //A.h
+  #include "B.h"
+  class A {
+      B* b;
+  };
+  
+  //B.h
+  #include "A.h"
+  class B {
+      A* a;
+  };
+  ```
+
+  解决方案：前置声明。
+
+  当类/结构体被用作类的**指针**、**引用**时，无需包含完整的定义，用前置声明代替头文件包含。
+
+  在cpp中再包含具体头文件。
+
+- 头文件重复包含
+
+  使用#pragma once或头文件保护宏。
+
+- 依赖扩散问题
+
+  下述是依赖扩散的例子，由于b是类对象，导致不得不包含B.h
+
+  ```c++
+  #A.h
+  #include "B.h"
+  class A {
+      private:
+      B b;
+  };
+  ```
+
+  解法：**Pimpl**(point to implementation，指向实现的指针)
+
+  将类的**私有实现细节**隐藏到源文件中，减少头文件依赖。
+
+  ```c++
+  #A.h
+  class A {
+      private:
+      struct Impl;//前置声明实现类
+      Impl* impl_;
+  };
+  
+  //A.cpp
+  #include "A.h"
+  #include "B.h"
+  struct A::Impl {
+      B* b; //B的实现细节隐藏在.cpp中
+  }
+  ```
+
 # 模板
 
 ## 1 可变参数模板
@@ -883,7 +978,7 @@ cout<<sizeof(s1)<<endl; // 24
 cout<<sizeof(s2)<<endl; // 16
 ```
 
-# 语法
+# 基础语法&&特性
 
 ## 1 extern "C"
 
@@ -985,7 +1080,323 @@ int main( int argc, char* argv[] )
 
 ​	注意extern "C"是C++中的符号，不能在C中使用，否则会编译报错。
 
-## 2 右值引用(C++11)
+## 2 const相关
+
+### 1) 指针常量和常量指针
+
+**判断指针常量和常量指针**：遵循指针的定义技巧，从指针标识符开始，由右往左读，const修饰最靠近它的那个。
+
+**指针常量(constant pointer)**：指针修饰的常量，指针指向的**地址不能被修改**，但地址里的内容可以被修改；
+
+```c++
+int a = 8;
+int* const p = &a; //指针常量, const靠近变量
+*p=9; //OK
+p=&b; //Error
+```
+
+**常量指针(pointer to const)**：定义指针变量的时，数据类型前用const修饰，该指针即指向常量的指针。指针的地址可以被修改，但**地址的内容不能被修改**。
+
+```c++
+int a，b;
+const int *p = &a; //常量指针, const靠近被修饰的类型
+*p=9; //Error
+p=&b; //OK
+// ---------------------------------------------
+int const *q = &a; //同p
+```
+
+### 2) 顶层const和底层const
+
+#### 2.1) 定义
+
+​	顶层const：指针常量，指针的指向不能被改变，称其为顶层const属性；
+
+​	底层const：常量指针，指针指向的地址内容是个常量，称其为底层const属性。
+
+```c++
+int* const p1 = &a;//p1是顶层const
+const int* p2 = &a;//p2是底层const
+```
+
+#### 2.2) 赋值规律
+
+- 顶层const在赋值给其他变量时，**可以忽略**顶层属性；
+- 底层const在赋值给其他变量时，**不能忽略**底层属性；
+- int*类型可以转换为顶层和底层const，所以它可以给顶层和底层的const赋值；
+- 底层const**无法转换**为顶层const。
+
+#### 2.3) 示例
+
+```c++
+int a = 2,
+int *p = &a;
+
+const int *p1 = p; // (1) OK, int*可以转换为底层const
+int* const p2 = p; // (2) OK, int*可以转换为顶层const
+
+int* const p3 = p1; // (3) Error, p1为底层const, 赋值时不能忽略
+const int* p4 = p2; // (4) OK, p2为顶层const, 赋值时可以忽略
+
+int* p5 = p1; // (5) Error, 原因同(3)
+int* p6 = p2; // (6) OK, 原因同(4)
+
+const int* const p7 = p1; // (7) OK, p7具有底层属性, 且p1有底层属性
+const int* const p8 = p2; // (8) OK, p2具有顶层属性, 可被忽略
+
+const int* p10 = p7; // (9) OK, p10具备底层属性
+int* const p11 = p7; // (10) Error, p11没有底层属性, 但p7有, 不能忽略
+```
+
+## 3 隐式类型转换操作符
+
+​	隐式类型转换操作符形式如下：
+
+```c++
+operator type() const;
+```
+
+​	有如下注意事项：
+
+- 不允许转换成数组或者函数类型，但**允许**转换为指针（包括数组指针以及函数指针）或者引用类型
+- 类型转换运算符**没有显式的返回类型**，也**没有形参**
+- 必须定义成类的**成员函数**
+- 类型转换函数通常应该为const类型
+- 并且转换的类型要与return结果类型相同
+- 类类型转换函数不能调用
+
+​	正确使用示例如下：
+
+```c++
+class SmallInt {
+private:
+    std::size_t val;
+public:
+    SmallInt(int i = 0) :val(i) { if (i < 0 || i>255) { throw std::out_of_range("Bad SmallInt value");} }
+    operator int() const { return val; } //隐式类型转换
+    explicit operator float() const { return static_cast<float(val)>; }//显示类型转换, 编译器不会自动执行
+};
+// ------------- 示例 ---------------
+SmallInt si;
+si = 4; //首先将4隐式转换为SmallInt，然后调用SmallInt::operator=()
+std::cout << si + 3 << endl; //调用SmallInt::operator int(); 首先将si隐式地转换为int，然后执行整数的加法。
+```
+
+## 4 volatile关键字
+
+### 1) volatile的特性
+
+#### 1.1) 易变性
+
+​	`volatile`提醒编译器它后面所定义的变量随时都有可能改变，因此编译后的程序每次必须从内存中读取变量的数据。
+
+​	假设有写、读两条语句，依次对同一个 `volatile` 变量进行操作，那么后一条的读操作不会直接使用前一条的写操作对应的的**寄存器**里的内容，而是重新**从内存中读取**该 `volatile` 变量的值。
+
+​	编译器有时候会从寄存器处取变量的值，而**不是每次都从内存中取**。因为① 编译器认为变量并没有变化，所以认为寄存器里的值是最新的。② 访问寄存器比访问内存要快很多，编译器通常为了效率，可能会读取寄存器中的变量。
+
+​	但是，**变量在内存中的值可能会被其它元素修改**，比如：硬件或其它线程等。
+
+#### 1.2) 不可优化
+
+​	编译器不会对 `volatile` 声明的变量进行各种激进的优化(甚至将变量直接消除)，保证代码中的指令一定会被执行。
+
+```c++
+volatile int nNum;  // 将nNum声明为volatile
+nNum = 1;
+printf("nNum is: %d", nNum);
+```
+
+​	上述代码中，如果变量 `nNum` 没有声明为 `volatile` 类型，则编译器在编译过程中中就会对其进行优化，直接使用常量“1”进行替换，这样优化之后，生成的汇编代码很简介，执行时效率很高。
+
+​	当使用 `volatile` 进行声明后，编译器则不会对其进行优化，nNum 变量仍旧存在，编译器会将该变量从内存中取出，放入寄存器之中，然后再调用 printf() 函数进行打印。
+
+#### 1.3) 顺序性
+
+​	`volatile` 变量之间的顺序性不会被**编译器**进行乱序优化。
+
+### 2) volatile不能保证原子性
+
+​	`volatile`不保证原子性。它只是保证每次都做内存访问、编译器不做优化。要实现原子性需要加锁完成。
+
+​	有下述伪代码：
+
+```c++
+// global shared data
+bool flag = false; // (1)
+
+thread2(Type* value) 
+{
+    value->update(/* parameters */);
+    flag = true;
+    return;
+}
+
+thread1() 
+{
+    flag = false; // (2)
+    Type* value = new Type;
+    thread2(value);
+    while (true)
+    {
+        if (flag == true) // (3)
+        {
+            apply(value);
+            break;
+        }
+    }
+    thread2.join();
+    if (nullptr != value) { delete value; }
+    return;
+}
+```
+
+​	上述代码的语义是：thread1等待thread2将value更新后，再继续执行。
+
+​	对于多线程编程，上述代码有两个问题：
+
+① 在thread1中，从(2)到(3)，代码没有对flag修改，因此编译器可能将`if(flag == true)`优化掉；
+
+② 在thread2中，尽管逻辑上`update()`在`flag = true`前执行，但编译器和CPU并不知道。因此实际执行时，二者顺序可能发生变化。
+
+​	假如在(1)，将flag声明为`volatile`的，由于`if(flag == true)`是对volatile变量的访问，因此编译器不会优化它，从而肯定能保留该条件的判断，问题①得到了解决。但是问题②仍然存在。
+
+​	若把`value`也声明为volatile，如`volatile Type *value = new Type;`，那么问题②能解决吗？
+
+​	`volatile` 只作用在编译器上。代码最终是要运行在 CPU 上的。尽管编译器不会将(3)处换序，但CPU的乱序执行仍然可能交换`value` 和 `flag` 的赋值顺序。且new操作符不是原子的，它要执行分配空间、构造调用、指针赋值这三个操作。
+
+​	最终，只能通过**atomic**或**加锁**来修改上述程序。
+
+## 5 inline关键字
+
+### 1) inline关键字的作用
+
+​	允许一个函数在**多个编译单元中重复存在**(**每个源文件**即一个编译单元)。
+
+### 2) 内联函数
+
+​	内联函数以**代码膨胀为代价**，省去了**函数调用的开销**，从而提高执行效率。
+
+​	**每一处**内联展开都要复制代码，将使程序的总代码量增大，消耗更多的内存空间。下述函数默认是内联函数：
+
+① 模板函数默认是内联函数；
+
+② 类定义中直接定义的成员函数，默认是内联函数。
+
+### 3) inline关键字和内联函数没有关系
+
+​	本小节主要参考自[C++ inline有什么用？](https://www.zhihu.com/question/24185638)。
+
+​	现代的编译器在决定是否将函数执行内联展开时，**不参考**函数声明中inline修饰符。
+
+​	inline关键字不仅能修饰函数，也可修饰命名空间(C++11以后)，修饰变量(C++17以后)。
+
+​	inline主要作用是允许**同一个函数或变量的定义出现在多个编译单元之中**。
+
+#### 3.1) inline修饰函数
+
+##### (1) 函数在头文件中
+
+```c++
+/* foo.h */
+inline int foo(int x) {
+    static int factor = 1;
+    return x * (factor++);
+}
+
+/* bar1.cc */
+#include "foo.h"
+int bar1() {
+    return foo(1);
+}
+
+/* bar2.cc */
+#include "foo.h"
+int bar2() {
+    return foo(2);
+}
+
+/* main.cc */
+int Bar1(), Bar2();
+int main() {
+    return Bar1() + Bar2();
+}
+```
+
+​	编译源文件，并链接生成可执行程序，有：
+
+```c++
+g++ -c main.cc bar1.cc bar2.cc -fno-gnu-unique  # ok
+g++ -o main main.o bar1.o bar2.o                # ok
+./main; echo $? # 5
+```
+
+​	上述没有发生multiple definition错误，并且main的输出表明两次调用使用了同一个局部静态变量factor。
+
+​	使用**readelf**查看输出的可执行main文件的**符号表**，
+
+```c++
+readelf -s main
+// --------------------------
+Num:    Value          Size Type    Bind   Vis      Ndx Name
+...
+49: 0000000000004010    4 OBJECT  WEAK   DEFAULT   23 _ZZ3FooiE6factor
+...
+53: 000000000000115f    32 FUNC    WEAK   DEFAULT   14 _Z3Fooi
+...
+```
+
+​	可以发现main中Foo和静态变量factor的定义只有一份，且Foo和factor都是**WEAK**符号。
+
+##### (2) 函数在源文件中
+
+```c++
+/* bar1.cc */
+inline int Foo(int x) {
+    static int factor = 1;
+    return x * (factor++);
+}
+int Bar1() {
+    return Foo(1);
+}
+
+/* bar2.cc */
+inline int Foo(int x) {
+    static int factor = 2;
+    return x * (factor++);
+}
+int Bar2() {
+    return Foo(2);
+}
+
+/* main.cc */
+int Bar1(), Bar2();
+int main() {
+    return Bar1() + Bar2();
+}
+```
+
+​	对于上述例子，编译器很可能根据**源文件的编译顺序**从而决定使用哪个Foo：
+
+```c++
+g++ -o main main.cc bar1.cc bar2.cc -fno-gnu-unique # ok
+./main; echo $? # 5
+g++ -o main main.cc bar2.cc bar1.cc -fno-gnu-unique # ok
+./main; echo $? # 8
+```
+
+​	故应该尽量避免上述情况发生：既无法保证对方的定义与你相同，也无法保证链接器最终选择的定义。
+
+​	如果此时有个编译单元中的Foo没有声明为inline，该单元对应的版本的符号是**全局的强符号**，链接器在面对多个弱符号和一个强符号时一定会采用强符号对应的定义。因此该版本的定义会覆盖其它单元所定义的inline版本。
+
+​	如果一定要在多个编译单元中定义同名函数，要么将其声明为**static**，要么将其声明在**不同的命名空间中**。
+
+#### 3.2) inline修饰命名空间(C++11)
+
+#### 3.3) inline修饰变量(C++17)
+
+# C++11常用特性
+
+## 1 右值引用
 
 ### 1) 区分左值、右值
 
@@ -1111,7 +1522,7 @@ ref_a = 6;
 
 ​	右值引用能指向右值，本质上也是把右值**提升**为一个左值，并定义一个右值引用通过std::move指向该左值。
 
-## 3 完美转发(C++11)
+## 2 完美转发
 
 ### 1) 万能引用
 
@@ -1175,7 +1586,7 @@ void PerfectForward(T&& t)
 
 ​	通过std::forward进行转发，就能达到想要的效果。
 
-## 4 std::move和std::forward的区别
+## 3 std::move和std::forward的区别
 
 - 相同点
   std::move和std::forward都是转换(cast)的函数(函数模版)，不产生任何可执行的代码。
@@ -1257,75 +1668,7 @@ void PerfectForward(T&& t)
   编译器**不允许出现引用的引用**。若出现，则使用**引用折叠规则**，使其变为单个引用。
   引用折叠通常发生在模版实例化时进行模版类型推导和auto变量的类型推导。
 
-## 5 const相关
-
-### 1) 指针常量和常量指针
-
-**判断指针常量和常量指针**：遵循指针的定义技巧，从指针标识符开始，由右往左读，const修饰最靠近它的那个。
-
-**指针常量(constant pointer)**：指针修饰的常量，指针指向的**地址不能被修改**，但地址里的内容可以被修改；
-
-```c++
-int a = 8;
-int* const p = &a; //指针常量, const靠近变量
-*p=9; //OK
-p=&b; //Error
-```
-
-**常量指针(pointer to const)**：定义指针变量的时，数据类型前用const修饰，该指针即指向常量的指针。指针的地址可以被修改，但**地址的内容不能被修改**。
-
-```c++
-int a，b;
-const int *p = &a; //常量指针, const靠近被修饰的类型
-*p=9; //Error
-p=&b; //OK
-// ---------------------------------------------
-int const *q = &a; //同p
-```
-
-### 2) 顶层const和底层const
-
-#### 2.1) 定义
-
-​	顶层const：指针常量，指针的指向不能被改变，称其为顶层const属性；
-
-​	底层const：常量指针，指针指向的地址内容是个常量，称其为底层const属性。
-
-```c++
-int* const p1 = &a;//p1是顶层const
-const int* p2 = &a;//p2是底层const
-```
-
-#### 2.2) 赋值规律
-
-- 顶层const在赋值给其他变量时，**可以忽略**顶层属性；
-- 底层const在赋值给其他变量时，**不能忽略**底层属性；
-- int*类型可以转换为顶层和底层const，所以它可以给顶层和底层的const赋值；
-- 底层const**无法转换**为顶层const。
-
-#### 2.3) 示例
-
-```c++
-int a = 2,
-int *p = &a;
-
-const int *p1 = p; // (1) OK, int*可以转换为底层const
-int* const p2 = p; // (2) OK, int*可以转换为顶层const
-
-int* const p3 = p1; // (3) Error, p1为底层const, 赋值时不能忽略
-const int* p4 = p2; // (4) OK, p2为顶层const, 赋值时可以忽略
-
-int* p5 = p1; // (5) Error, 原因同(3)
-int* p6 = p2; // (6) OK, 原因同(4)
-
-const int* const p7 = p1; // (7) OK, p7具有底层属性, 且p1有底层属性
-const int* const p8 = p2; // (8) OK, p2具有顶层属性, 可被忽略
-
-const int* p10 = p7; // (9) OK, p10具备底层属性
-int* const p11 = p7; // (10) Error, p11没有底层属性, 但p7有, 不能忽略
-```
-
-## 6 auto相关(C++11)
+## 4 auto
 
 ### 1) auto推导规则
 
@@ -1496,7 +1839,7 @@ void deduceX(T x);
 deduceX(x); // 错误：不能推断T
 ```
 
-## 7 decltype(C++11)
+## 5 decltype
 
 ### 1) decltype和auto的区别
 
@@ -1602,7 +1945,7 @@ auto multiply(_Tx x, _Ty y)->decltype(x*y)
 
 ​	拖尾返回类型的优点：可以使用函数参数来声明函数返回类型。
 
-## 8 智能指针(C++11)
+## 6 智能指针
 
 ​	本小节参考自[https://blog.csdn.net/ithiker/article/details/51532484](https://blog.csdn.net/ithiker/article/details/51532484)。
 
@@ -1706,7 +2049,7 @@ int main()
 }
 ```
 
-## 9 NULL和nullptr区别(C++11)
+## 7 NULL和nullptr区别
 
 ### 1) C语言中的NULL
 
@@ -1773,7 +2116,7 @@ void operator&() const;
 };
 ```
 
-## 10 static_cast和dynamic_cast(C++11)
+## 8 static_cast和dynamic_cast
 
 - static_cast
 
@@ -1805,7 +2148,7 @@ void operator&() const;
 
   综上，dynamic_cast会存在运行时开销。
 
-## 11 lambda表达式以及底层原理(C++11)
+## 9 lambda表达式及原理
 
 - 对函数指针进行对象化管理
 
@@ -1974,41 +2317,7 @@ static inline /*constexpr */ bool __invoke(int x, int y)
 };
 ```
 
-## 12 隐式类型转换操作符
-
-​	隐式类型转换操作符形式如下：
-
-```c++
-operator type() const;
-```
-
-​	有如下注意事项：
-
-- 不允许转换成数组或者函数类型，但**允许**转换为指针（包括数组指针以及函数指针）或者引用类型
-- 类型转换运算符**没有显式的返回类型**，也**没有形参**
-- 必须定义成类的**成员函数**
-- 类型转换函数通常应该为const类型
-- 并且转换的类型要与return结果类型相同
-- 类类型转换函数不能调用
-
-​	正确使用示例如下：
-
-```c++
-class SmallInt {
-private:
-    std::size_t val;
-public:
-    SmallInt(int i = 0) :val(i) { if (i < 0 || i>255) { throw std::out_of_range("Bad SmallInt value");} }
-    operator int() const { return val; } //隐式类型转换
-    explicit operator float() const { return static_cast<float(val)>; }//显示类型转换, 编译器不会自动执行
-};
-// ------------- 示例 ---------------
-SmallInt si;
-si = 4; //首先将4隐式转换为SmallInt，然后调用SmallInt::operator=()
-std::cout << si + 3 << endl; //调用SmallInt::operator int(); 首先将si隐式地转换为int，然后执行整数的加法。
-```
-
-## 13 constexpr
+## 10 constexpr
 
 ​	constexpr表达式是指**值不会改变**且在**编译过程**就能得到结果的表达式。
 
@@ -2056,217 +2365,152 @@ k = &j; //Error
 
 ​	常量表达式函数的返回值可以在编译阶段就计算出来。不过在定义常量表示函数的时候，我们会遇到更多的约束规则。
 
-## 14 volatile关键字
+# C++17常用特性
 
-### 1) volatile的特性
+## 1 std::shared_ptr支持数组
 
-#### 1.1) 易变性
+## 2 结构化绑定(语言特性)
 
-​	`volatile`提醒编译器它后面所定义的变量随时都有可能改变，因此编译后的程序每次必须从内存中读取变量的数据。
+- 作用：将元组、结构体或数组的成员直接**解包**到变量中。
 
-​	假设有写、读两条语句，依次对同一个 `volatile` 变量进行操作，那么后一条的读操作不会直接使用前一条的写操作对应的的**寄存器**里的内容，而是重新**从内存中读取**该 `volatile` 变量的值。
+- 语法：
 
-​	编译器有时候会从寄存器处取变量的值，而**不是每次都从内存中取**。因为① 编译器认为变量并没有变化，所以认为寄存器里的值是最新的。② 访问寄存器比访问内存要快很多，编译器通常为了效率，可能会读取寄存器中的变量。
+  ```c++
+  auto [var1, var2, ...] = expression;
+  ```
 
-​	但是，**变量在内存中的值可能会被其它元素修改**，比如：硬件或其它线程等。
+- 简化多返回值处理，或遍历关联容器。
 
-#### 1.2) 不可优化
+- 底层实现：**编译器**自动生成代码，将成员绑定到变量。
 
-​	编译器不会对 `volatile` 声明的变量进行各种激进的优化(甚至将变量直接消除)，保证代码中的指令一定会被执行。
+  ```c++
+  std::map<int, std::string> m;
+  auto [itr, success] = m.insert({1, "hello"});
+  
+  //struct 
+  struct Point { int x; int y; };
+  Point p(1, 2);
+  auto [x, y] = p;// x = 1, y = 2
+  //底层实现
+  /*
+  auto __tmp = p; //生成一个临时对象
+  int& x = __tmp.x;
+  int& y = __tmp.y;
+  */
+  
+  //数组
+  int arr[] = {3, 4};
+  auto [a, b] = arr;
+  ```
 
-```c++
-volatile int nNum;  // 将nNum声明为volatile
-nNum = 1;
-printf("nNum is: %d", nNum);
-```
+- 注意事项
 
-​	上述代码中，如果变量 `nNum` 没有声明为 `volatile` 类型，则编译器在编译过程中中就会对其进行优化，直接使用常量“1”进行替换，这样优化之后，生成的汇编代码很简介，执行时效率很高。
+  - **绑定顺序**必须和结构体/元组成员**一致**；
+  - 必须**解包所有成员**，不能跳过某个成员。
+  - 仅支持绑定到**public**成员。
 
-​	当使用 `volatile` 进行声明后，编译器则不会对其进行优化，nNum 变量仍旧存在，编译器会将该变量从内存中取出，放入寄存器之中，然后再调用 printf() 函数进行打印。
+## 3 if/switch语句中的初始化器(带初始化的条件语句)
 
-#### 1.3) 顺序性
+- 作用：在条件语句中声明变量，限制作用域。
 
-​	`volatile` 变量之间的顺序性不会被**编译器**进行乱序优化。
+- 注意事项：
 
-### 2) volatile不能保证原子性
+  - if语句：变量在if、else中都可见。
+  - switch语句：变量在整个switch块(所有case分支)中都可见。
 
-​	`volatile`不保证原子性。它只是保证每次都做内存访问、编译器不做优化。要实现原子性需要加锁完成。
+- 应用场景：资源管理器(如文件句柄、锁)、临时变量作用域控制。
 
-​	有下述伪代码：
+  ```c++
+  if(auto it = m.find(key); it != m.end()) {
+      //使用it
+  }
+  ```
 
-```c++
-// global shared data
-bool flag = false; // (1)
+## 4 内联变量
 
-thread2(Type* value) 
-{
-    value->update(/* parameters */);
-    flag = true;
-    return;
-}
+- 作用：允许**头文件**中定义并**初始化**全局变量或静态成员变量，避免重复定义。
 
-thread1() 
-{
-    flag = false; // (2)
-    Type* value = new Type;
-    thread2(value);
-    while (true)
-    {
-        if (flag == true) // (3)
-        {
-            apply(value);
-            break;
-        }
-    }
-    thread2.join();
-    if (nullptr != value) { delete value; }
-    return;
-}
-```
+- 底层实现：**链接器合并**，所有编译单元中的**同名内联变量**会被链接器合并为一个实体。
 
-​	上述代码的语义是：thread1等待thread2将value更新后，再继续执行。
+- 注意：
 
-​	对于多线程编程，上述代码有两个问题：
+  - 内联变量必须显示初始化。
+  - 只能作用于全局变量或静态类成员变量。
 
-① 在thread1中，从(2)到(3)，代码没有对flag修改，因此编译器可能将`if(flag == true)`优化掉；
+- 示例：
 
-② 在thread2中，尽管逻辑上`update()`在`flag = true`前执行，但编译器和CPU并不知道。因此实际执行时，二者顺序可能发生变化。
+  ```c++
+  //c++17之前的单例
+  //Singleton.h
+  class Singleton {
+  private:
+      static Singleton* instance;	
+  };
+  
+  //Singleton.cpp
+  Singleton* Singleton::instance = nullptr;
+  
+  //c++17
+  //Singleton.h
+  class Singleton {
+  private:
+      inline static Singleton* instance = nullptr;	
+  };
+  ```
 
-​	假如在(1)，将flag声明为`volatile`的，由于`if(flag == true)`是对volatile变量的访问，因此编译器不会优化它，从而肯定能保留该条件的判断，问题①得到了解决。但是问题②仍然存在。
 
-​	若把`value`也声明为volatile，如`volatile Type *value = new Type;`，那么问题②能解决吗？
+## 5 std::optional
 
-​	`volatile` 只作用在编译器上。代码最终是要运行在 CPU 上的。尽管编译器不会将(3)处换序，但CPU的乱序执行仍然可能交换`value` 和 `flag` 的赋值顺序。且new操作符不是原子的，它要执行分配空间、构造调用、指针赋值这三个操作。
+- 作用：用于表示一个可能**包含值**或**无值**的容器，提供了一种类型安全且语义清晰的方式，代替传统的特殊值标记，如nullptr、-1、空字符串等。
 
-​	最终，只能通过**atomic**或**加锁**来修改上述程序。
+  提升代码的可读性和安全性。
 
-## 15 inline关键字
+- 注意：禁止**未检查**的访问。直接访问空的optional会导致未定义的行为。
 
-### 1) inline关键字的作用
+- 示例：
 
-​	允许一个函数在**多个编译单元中重复存在**(**每个源文件**即一个编译单元)。
+  ```c++
+  std::optional<User> findUser(const std::string& key)
+  {
+  	if(auto it = db.find(key); it != db.end())
+  	{
+  		return it->second;
+  	}
+  	return std::nullopt;
+  }
+  
+  // case
+  if(auto user = findUser("Alice")) 
+  {
+      user->print();
+  }
+  else
+  {
+      //user not found
+  }
+  ```
 
-### 2) 内联函数
+## 6 std::string_view
 
-​	内联函数以**代码膨胀为代价**，省去了**函数调用的开销**，从而提高执行效率。
+- 理解：std::string_view是一种轻量级的**非拥有字符串视图类**，表示对字符串序列的**只读引用**。旨在避免不必要的字符串拷贝，提升字符串操作性能。同时兼容多种字符串类型(std::string、C风格字符串、字符数组等)。
 
-​	**每一处**内联展开都要复制代码，将使程序的总代码量增大，消耗更多的内存空间。下述函数默认是内联函数：
+- 作用：非拥有字符串视图(**字符串指针**和**长度**)，避免拷贝。
 
-① 模板函数默认是内联函数；
+- 注意：
 
-② 类定义中直接定义的成员函数，默认是内联函数。
+  - 悬挂引用风险：底层字符串效果，string_view指向无效内存。
+  - string_view只读，无法修改底层数据。
 
-### 3) inline关键字和内联函数没有关系
+- 示例：
 
-​	本小节主要参考自[C++ inline有什么用？](https://www.zhihu.com/question/24185638)。
-
-​	现代的编译器在决定是否将函数执行内联展开时，**不参考**函数声明中inline修饰符。
-
-​	inline关键字不仅能修饰函数，也可修饰命名空间(C++11以后)，修饰变量(C++17以后)。
-
-​	inline主要作用是允许**同一个函数或变量的定义出现在多个编译单元之中**。
-
-#### 3.1) inline修饰函数
-
-##### (1) 函数在头文件中
-
-```c++
-/* foo.h */
-inline int foo(int x) {
-    static int factor = 1;
-    return x * (factor++);
-}
-
-/* bar1.cc */
-#include "foo.h"
-int bar1() {
-    return foo(1);
-}
-
-/* bar2.cc */
-#include "foo.h"
-int bar2() {
-    return foo(2);
-}
-
-/* main.cc */
-int Bar1(), Bar2();
-int main() {
-    return Bar1() + Bar2();
-}
-```
-
-​	编译源文件，并链接生成可执行程序，有：
-
-```c++
-g++ -c main.cc bar1.cc bar2.cc -fno-gnu-unique  # ok
-g++ -o main main.o bar1.o bar2.o                # ok
-./main; echo $? # 5
-```
-
-​	上述没有发生multiple definition错误，并且main的输出表明两次调用使用了同一个局部静态变量factor。
-
-​	使用**readelf**查看输出的可执行main文件的**符号表**，
-
-```c++
-readelf -s main
-// --------------------------
-Num:    Value          Size Type    Bind   Vis      Ndx Name
-...
-49: 0000000000004010    4 OBJECT  WEAK   DEFAULT   23 _ZZ3FooiE6factor
-...
-53: 000000000000115f    32 FUNC    WEAK   DEFAULT   14 _Z3Fooi
-...
-```
-
-​	可以发现main中Foo和静态变量factor的定义只有一份，且Foo和factor都是**WEAK**符号。
-
-##### (2) 函数在源文件中
-
-```c++
-/* bar1.cc */
-inline int Foo(int x) {
-    static int factor = 1;
-    return x * (factor++);
-}
-int Bar1() {
-    return Foo(1);
-}
-
-/* bar2.cc */
-inline int Foo(int x) {
-    static int factor = 2;
-    return x * (factor++);
-}
-int Bar2() {
-    return Foo(2);
-}
-
-/* main.cc */
-int Bar1(), Bar2();
-int main() {
-    return Bar1() + Bar2();
-}
-```
-
-​	对于上述例子，编译器很可能根据**源文件的编译顺序**从而决定使用哪个Foo：
-
-```c++
-g++ -o main main.cc bar1.cc bar2.cc -fno-gnu-unique # ok
-./main; echo $? # 5
-g++ -o main main.cc bar2.cc bar1.cc -fno-gnu-unique # ok
-./main; echo $? # 8
-```
-
-​	故应该尽量避免上述情况发生：既无法保证对方的定义与你相同，也无法保证链接器最终选择的定义。
-
-​	如果此时有个编译单元中的Foo没有声明为inline，该单元对应的版本的符号是**全局的强符号**，链接器在面对多个弱符号和一个强符号时一定会采用强符号对应的定义。因此该版本的定义会覆盖其它单元所定义的inline版本。
-
-​	如果一定要在多个编译单元中定义同名函数，要么将其声明为**static**，要么将其声明在**不同的命名空间中**。
-
-#### 3.2) inline修饰命名空间(C++11)
-
-#### 3.3) inline修饰变量(C++17)
+  ```c++
+  void processString(const std::string& msg) { ... }
+  void processView(std::string_view msg) { ... }
+  
+  //case
+  processString("Hello");//传入字符串字面量, 发生隐式构造, 会进行一次拷贝
+  processView("Hello");  //直接生成视图, 零拷贝
+  ```
 
 # 标准库数据结构
 

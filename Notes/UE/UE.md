@@ -65,7 +65,7 @@ typora-root-url: pic
 
 <img src="/UE_create_bp_class.png" alt="UE_create_bp_class" style="zoom:60%;" />
 
-### 2.1 蓝图函数
+### 1) 蓝图函数
 
 ​	Functions execute blocks of blueprints that makes our game do things。
 
@@ -85,7 +85,7 @@ typora-root-url: pic
   此时，在pure函数就**没有执行引脚**了：
   <img src="/UE_pure_function.png" alt="UE_pure_function" style="zoom:60%;" />
 
-### 2.2 成员函数
+### 2) 成员函数
 
 ​	成员函数不在关卡的蓝图上，而在某个特定的**蓝图类**中。蓝图类的成员函数对面向对象编程很重要。
 
@@ -95,7 +95,7 @@ typora-root-url: pic
 - 创建成员函数：
   <img src="/UE_make_member_function.png" alt="UE_make_member_function" style="zoom:60%;" />
 
-### 2.3 蓝图函数库
+### 3) 蓝图函数库
 
 ​	将函数放到蓝图函数库(一种资产)中，让每个蓝图都能访问。
 
@@ -112,50 +112,9 @@ typora-root-url: pic
 
 <img src="/UE_coordinate.png" alt="UE_coordinate" style="zoom:50%;" />
 
-## 2 UE的对象和分层
+## 2 UE多线程
 
-- 对象简述
-
-| 类型                 | 解析                                                         |
-| -------------------- | ------------------------------------------------------------ |
-| UObject              | 数据和方法的集合。                                           |
-| AActor               | 可在关卡中行动的对象(Object)。                               |
-| UActorComponent      | 可挂载到Actor上的Object(数据和方法)。                        |
-| UWorld               | 包含了一组可以相互交互的Actor和组件的集合，多个关卡（Level）可以被加载进UWorld或从UWorld卸载。可以同时存在多个UWorld实例。 |
-| ULevel               | 关卡，存储着一组Actor和组件，并且存储在同一个文件。          |
-| USceneComponent      | 场景组件，是所有可以被加入到场景的物体的父类，比如灯光、模型、雾等。 |
-| UPrimitiveComponent  | 图元组件，是所有可渲染或拥有物理模拟的物体父类。是CPU层裁剪的最小粒度单位， |
-| ULightComponent      | 光源组件，是所有光源类型的父类。                             |
-| FScene               | 是UWorld在渲染模块的代表。只有加入到FScene的物体才会被渲染器感知到。渲染线程拥有FScene的所有状态（游戏线程不可直接修改）。 |
-| FPrimitiveSceneProxy | 图元场景代理，是UPrimitiveComponent在渲染器的代表，镜像了UPrimitiveComponent在渲染线程的状态。 |
-| FPrimitiveSceneInfo  | 渲染器内部状态（描述了FRendererModule的实现），相当于融合了UPrimitiveComponent 和FPrimitiveSceneProxy。只存在渲染器模块，所以引擎模块无法感知到它的存在。 |
-| FSceneView           | 描述了FScene内的单个视图（view），同个FScene允许有多个view，换言之，一个场景可以被多个view绘制，或者多个view同时被绘制。每一帧都会创建新的view实例。 |
-| FViewInfo            | view在渲染器的内部代表，只存在渲染器模块，引擎模块不可见。   |
-| FSceneViewState      | 存储了有关view的渲染器私有信息，这些信息需要被跨帧访问。在Game实例，每个ULocalPlayer拥有一个FSceneViewState实例。 |
-| FSceneRenderer       | 每帧都会被创建，封装帧间临时数据。下派生FDeferredShadingSceneRenderer（延迟着色场景渲染器）和FMobileSceneRenderer（移动端场景渲染器），分别代表PC和移动端的默认渲染器。 |
-
-- 引擎模块和渲染模块的代表：
-
-| Engine Module                              | Renderer Module     |
-| ------------------------------------------ | ------------------- |
-| UWorld                                     | FScene              |
-| UPrimitiveComponent / FPrimitiveSceneProxy | FPrimitiveSceneInfo |
-| FSceneView                                 | FViewInfo           |
-| ULocalPlayer                               | FSceneViewState     |
-| ULightComponent / FLightSceneProxy         | FLightSceneInfo     |
-
-- 游戏线程和渲染线程代表
-
-| 游戏线程            | 渲染线程                                   |
-| ------------------- | ------------------------------------------ |
-| UWorld              | FScene                                     |
-| UPrimitiveComponent | FPrimitiveSceneProxy / FPrimitiveSceneInfo |
-| ULocalPlayer        | FSceneViewState                            |
-| ULightComponent     | FLightSceneProxy / FLightSceneInfo         |
-
-## 3 UE多线程
-
-### 3.1 传统API的多线程特性
+### 1) 传统API的多线程特性
 
 ​	DirectX11尝试从硬件层面解决多线程渲染的问题。它支持了两种设备上下文：**即时上下文(Immediate Context)**和**延迟上下文(Deferred Context)**。
 
@@ -169,7 +128,7 @@ typora-root-url: pic
 
 <img src="/UE_TranditionalAPIThreads.png" alt="UE_TranditionalAPIThreads" style="zoom:75%;" />
 
-### 3.2 UE的线程模型
+### 2) UE的线程模型
 
 ​	默认情况下，UE存在游戏线程(Game Thread)、渲染线程(Render Thread)、RHI线程(RHI Thread)，它们都独立地运行在专门的线程上(FRunnableThread)。
 
@@ -185,7 +144,7 @@ typora-root-url: pic
 
 <img src="/UE_ThreadModel.png" alt="UE_ThreadModel" style="zoom:65%;" />
 
-## 4 延迟渲染管线
+## 3 延迟渲染管线
 
 ​	UE默认使用延迟渲染管线。
 
@@ -197,7 +156,7 @@ typora-root-url: pic
 
 <img src="/UE_DefferedRendering.png" alt="UE_DefferedRendering" style="zoom:90%;" />
 
-### 4.1 通用延迟渲染管线简述
+### 1) 通用延迟渲染管线简述
 
 - 几何通道
 
@@ -269,9 +228,9 @@ typora-root-url: pic
 
   此外，应对简单场景时，可能反而得不到渲染性能方面的提升。
 
-### 4.2 延迟渲染管线的变种
+### 2) 延迟渲染管线的变种
 
-#### 4.2.1 Tiled-Based Deffered Rendering
+#### 2.1) Tiled-Based Deffered Rendering
 
 ​	基于瓦片的渲染，简称**TBDR**，它的核心思想在于将渲染纹理分成规则的一个个四边形(称为Tile)，然后利用四边形的包围盒剔除该Tile内无用的光源，只保留有作用的光源列表，从而减少了实际光照计算中的无效光源的计算量。
 
@@ -293,7 +252,7 @@ typora-root-url: pic
 
 <img src="/UE_TBDRHardwareAcc.png" alt="UE_TBDRHardwareAcc" style="zoom:80%;" />
 
-### 4.3 UE延迟渲染管线中的Pass
+### 3) UE延迟渲染管线中的Pass
 
 - PrePass
 
@@ -327,7 +286,7 @@ typora-root-url: pic
 
   此阶段会将半透明的渲染纹理混合到最终的场景颜色中。
 
-## 5 UE的材质
+## 4 UE的材质
 
 ​	本小节参考自：[UE：材质系统](https://mp.weixin.qq.com/s?__biz=MzA5MDcyOTE5Nw==&mid=2650549692&idx=1&sn=d23db44e95de518437a4f90dff057baf&chksm=880fb23ebf783b2860456c2dd3104236d47b0ecf562a058f4f75096f12580291a77b24b35626&scene=178&cur_album_id=2518511104424198145&search_click_id=#rd)。
 
@@ -343,12 +302,103 @@ typora-root-url: pic
 
 ​	注意，UMaterial : FMaterialResource : FMaterialRenderProxy是1 : N : 1的关系。
 
-# 组件Component
+# GamePlay Framework
 
-​	组件一般划分为**场景组件**和**Actor组件**。
+​	GamePlay框架是虚幻引擎为开发者提供的工具箱：
 
-- 场景组件：提供**被渲染**的能力，带有Transform属性，派生自**USceneComponent**，USceneComponent实际派生自UActorComponent。
-- Actor组件：提供**业务逻辑**，没有Transform属性，派生自**UActorComponent**，UActorComponent派生自UObject。
+- 是用于构建游戏基础的类的集合。
+- 提供游戏的核心架构，如角色控制、物理交互、网络同步等。
+- 通过添加组件或继承现有的类，快速实现复杂的游戏对象。
+
+## 1 简介
+
+### 1) GameInstance
+
+<img src="/UE_GameInstance.png" alt="UE_GameInstance" style="zoom:50%;" />
+
+- 特殊的实例，在引擎启动时创建，并一直保持活动状态，直到引擎关闭；
+- GameInstance是一个**管理类Actor**，在游戏世界中没有实体表现，只用于跟踪数据和运行代码；
+- GameInstance不能被复制，一个运行的游戏，对应唯一一个游戏实例；
+- 在不同关卡间需要访问的数据，应保存在GameInstance中；
+- 游戏实例会创建、管理一些子系统。
+
+### 2) GameMode
+
+- GameMode是**管理类Actor**，但不是永久的Actor，是GamePlay框架的**核心**；
+- GameMode在加载关卡Level的时候创建，事实上它是关卡中**第一个**被实例化的Actor；
+- GameMode的**生命周期**限制于关卡中，可在WorldSetting中**重载**每个关卡对应的GameMode；
+- 它是游戏的核心，定义了游戏的规则和行为；在创建时，实例化了**其他的框架Actor**，告诉引擎要使用哪些框架Actor；
+
+- GameMode负责把HUD、Pawn、Controller这些分散的东西整理在一起，如下所示：
+
+  <img src="/UE_GameModeAssemble.png" alt="UE_GameModeAssemble" style="zoom:40%;" />
+
+### 3) GameState和PlayerState
+
+<img src="/UE_PlayerState&&GameState.png" alt="UE_PlayerState&&GameState" style="zoom:50%;" />
+
+​	GameState和PlayerState是非实体的管理Actor，分别用于跟踪游戏的整体状态和玩家状态。
+
+​	它们会复制到服务器和所有玩家客户端上，提供高效、可供网络访问的数据存储库。
+
+- GameState：包含与**所有玩家**相关的数据和逻辑
+  - 每个关卡中只有一个GameState，由GameMode创建。
+
+- PlayerState：处理与**关联玩家**相关的数据和逻辑
+  - 每当玩家加入游戏，或进入关卡时，都会为玩家创建PlayerState。
+
+### 4) Player
+
+​	一个Player在实例化时，会关联两个**Actor：Pawn**和**Controller**，如下：
+
+<img src="/UE_Player.png" alt="UE_Player" style="zoom:50%;" />
+
+#### 4.1) Pawn
+
+<img src="/UE_Pawn.png" alt="UE_Pawn" style="zoom:50%;" />
+
+- Pawn
+  - 角色在游戏世界的物理实体，可以和游戏环境交互，如玩家、敌人、载具等等。
+  - 最简单的Pawn实现为Default Pawns。
+  - Default Pawns有三个重要组件：碰撞、网格体和移动。
+  - Spectator Pawns(旁观者Pawn)：本质和Default Pawn一样，但会渲染一台看不见的悬浮相机。
+- Character：Pawn重要的子类
+  - 包含移动逻辑的特殊Pawn，移动逻辑由CharacterMovementComponent提供。
+  - 支持网络同步
+  - 包含组件：CapsuleComponent、CharacterMoveComponent、SkeletalMeshComponent、ArrowComponent、SpringArmComponent、CameraComponent。
+  - CharacterMoveComponent：为Pawn的移动奠定了基础，支持网络复制。
+
+#### 4.2) Controller
+
+<img src="/UE_Controller.png" alt="UE_Controller" style="zoom:50%;" />
+
+​	Controller是管理类Actor，可以控制Pawn，决定了Pawn的行为逻辑，即Pawn可以被Controller占有(Possess)。
+
+​	即使Pawn消亡了，Controller也可一直存在。
+
+​	Controller有两个关键子类：**PlayerController**和**AIController**。
+
+- PlayerController
+  - 控制用户输入；
+  - 处理和玩家Pawn有关的游戏逻辑。
+- AIController
+  - 不代表玩家，不处理用户输入；
+  - 只存在于服务器中；
+  - 可高度依赖UE提供的行为树系统、导航系统等。
+
+### 5) Actor和Component
+
+#### 5.1) Actor
+
+- 场景中的一个实体，可以满足网络同步需求；
+- 通常包含一个或多个ActorComponent，赋予其特定的功能；
+- Actor本身不定义位置和旋转，其位置和旋转依赖于**RootComponent**。
+
+#### 5.2) ActorComponent
+
+​	组件：可添加到Actor的可重复利用的功能，包含很多函数和事件。
+
+​	组件之间是有**父子关系**的。当你调整父组件的属性时，子组件也会跟随变化。
 
 # 动画蓝图
 
@@ -377,7 +427,7 @@ typora-root-url: pic
 
 ## 2 动画优化
 
-### 2.1 优化AI旋转
+### 1) 优化AI旋转
 
 - 原因
 
@@ -421,33 +471,17 @@ typora-root-url: pic
 
   将Mesh的碰撞预设设置为None，把外部胶囊体的碰撞预设设置为目标类型，从而可以节约一点性能。
 
-# GamePlay
-
-## 1 GameMode
-
-- 自定义GameMode
-
-  使用UE提供的GameModeBase作为基类，自定义GameMode。
-
-  通常自定义BP_GameModeBase，作为自定义GameMode的**基类**。
-
-  不同Level派生不同的BP_GameModeXXX子类。
-
-- 应用GameMode
-
-  完成GameMode编写后，在**WorldSetting**中为当前Level指定GameMode。
-
 # UE C++
 
-## 1 UE C++基础
+## 1 基础
 
-### 1.1 C++工程编译缓存清理
+### 1) C++工程编译缓存清理
 
 ① 在UE5.4中，删除Binaries、DerivedDataCache、Intermediate、Saved、.vs这5个文件夹以及.sln工程文件。
 
 ② 右键点击.uproject文件，点击Generate Visual Studio project files。
 
-### 1.2 字符串
+### 2) 字符串
 
 - L前缀
   C++字符串前加L表示该字符串是**Unicode字符串**。
@@ -468,14 +502,3 @@ typora-root-url: pic
   ```
 
 - FString：UE封装的动态字符串。
-
-## 2 UE C++类
-
-### 2.1 GameMode和PlayerStart
-
-- GameMode
-  An actor that goes into your level and controls the "rules".
-  GameMode是Actor，它管理游戏规则，决定游戏中Actor的类型等规则。
-- PlayerStart
-  PlayerStart是C++类，表示：游戏开始时，玩家的**起始位置**。
-  游戏中，点击**F8**，可以暂停游戏，脱离当前Player在世界中漫游。

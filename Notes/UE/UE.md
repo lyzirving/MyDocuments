@@ -443,6 +443,78 @@ typora-root-url: pic
 
   其意思是：当Contoller的朝向更新时，角色蓝图会用设置的**旋转速度**和**新的朝向**，实施一个平滑的旋转。
 
+## 3 动画重定向
+
+### 1) 原理
+
+- 重定向原理
+
+  动画需要绑定到骨骼资产才能使用，骨骼资产实际是一组骨骼名称和层级数据。
+
+  层级数据保存了骨骼的**初始比例**(来自定义该骨骼的**网格体**)，这些比例数据通常保存在骨骼的**位移数据**中。
+
+  重定向系统只修改骨骼的位移，骨骼的旋转通常来自动画数据。
+
+- IK Rig
+
+  IK Rig系统提供了交互式创建解算器的方法，用于为骨骼网格体执行姿势编辑。
+
+### 2) 手动生成重定向器
+
+#### 2.1) 创建IK Rig资产
+
+​	为两个骨骼网格体**创建IK Rig**。打开IK Rig，在详情页面，为对应的IK Rig设置与其**匹配**的预览骨骼网格体。
+
+<img src="/UE_IK_Rig.png" alt="UE_IK_Rig" style="zoom:67%;" />
+
+#### 2.2) 设置重定向根和链
+
+​	当两个IK Rig都具备重定向链时，可通过**重定向链**来**传递动画数据**。
+
+​	为骨骼设置重定向根骨骼，通常是**骨盆**或**臀部的骨骼**，用于成比例的定义和传输角色的根骨骼运动。
+
+<img src="/UE_RetargetRoot.png" alt="UE_RetargetRoot" style="zoom:60%;" />
+
+<img src="/UE_RetargetRootDetail.png" alt="UE_RetargetRootDetail" style="zoom:60%;" />
+
+​	为所有需要重定向的肢体创建**重定向链**。
+
+​	通过长按Shift，点选链中的骨骼，然后点击鼠标右键，选择创建重定向链，就得到一条重定向链。
+
+<img src="/UE_RetargetChain.png" alt="UE_RetargetChain" style="zoom:50%;" />
+
+详情页中展示了链名、链首骨骼、末端骨骼等信息。最终的重定向链，一般如下：
+
+<img src="/UE_RetargetChain_Final.png" alt="UE_RetargetChain_Final" style="zoom:70%;" />
+
+#### 2.3) 创建重定向器
+
+​	创建重定向器，重定向器会统揽两个IK Rig，根据源动画，导出目标动画。
+
+<img src="/UE_IK_Retargeter.png" alt="UE_IK_Retargeter" style="zoom:67%;" />
+
+​	在重定向器中，设置源/目标的IK Rig资产，并检查链映射链表中源和目标链是否匹配。
+
+<img src="/UE_ChainMapping.png" alt="UE_ChainMapping" style="zoom:60%;" />
+
+​	检查两个骨骼是否都为T-Pose或A-Pose。若不匹配，要为重定向目标创建新的姿势，并按骨骼调整。
+
+<img src="/UE_EditRetargetPose.png" alt="UE_EditRetargetPose" style="zoom:50%;" />
+
+​	最终，在资产浏览器中预览动画，导出目标动画。
+
+### 3) UE5.4自动重定向
+
+​	自动重定向，需要使用UE支持的**常见骨骼模版**，否则只能手动重定向。
+
+​	右键选中需要重定向的动画，选择重定向动画选项：
+
+<img src="/UE_AutoRetargetAnim.png" alt="UE_AutoRetargetAnim" style="zoom:60%;" />
+
+​	按下图选择目标骨骼，勾选自动生成重定向器，选择要导出的动画，导出即可：
+
+<img src="/UE_ExportAutoRetargetAnim.png" alt="UE_ExportAutoRetargetAnim" style="zoom:50%;" />
+
 # 物理系统
 
 ## 1 三种碰撞响应

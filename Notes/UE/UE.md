@@ -515,6 +515,12 @@ typora-root-url: pic
 
 <img src="/UE_ExportAutoRetargetAnim.png" alt="UE_ExportAutoRetargetAnim" style="zoom:50%;" />
 
+## 4 动画混合
+
+​	下图描述了在动画蓝图中，如何混合上半身动画和下半身动画：
+
+<img src="/UE_BlendAnimation.png" alt="UE_BlendAnimation" style="zoom:60%;" />
+
 # 物理系统
 
 ## 1 三种碰撞响应

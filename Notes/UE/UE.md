@@ -26,80 +26,7 @@ typora-root-url: pic
 
   <img src="/UE_set_anti_aliase.png" alt="UE_set_anti_aliase" style="zoom:80%;" />
 
-# 蓝图基础
-
-## 1 基础概念
-
-​	蓝图是一种可视化编程语言，与C++相反，它是一种文本语言，专为UE编写的。下述是蓝图相关的概念：
-
-- Node：Premade functionality，节点是预设的功能。
-- Event：A “when” node，Event也是节点，代表某个触发时机。其被罗列在**EventGraph**中。
-- Pin：Sockets we can connect up，引脚，用于连接节点。引脚按数据流向，可分为输入引脚和输出引脚。
-  
-  Input pin：When to run this node。
-  
-  Output pin：What to do after。
-  
-  引脚按类型，可分为数据引脚、执行引脚。
-  **Data pin**(Input/Output)：The input or output data for a node，用于挂载数据。
-  **Execution pin**(Input/Output)：When to run this Node。Input Pin指启动节点的时机。Output Pin指节点结束运行的时机。
-  
-- Branch Nodes：let us check if something is true or not and then do something based upon the result。分支节点，如下所示：
-  <img src="/UE_branch_node.png" alt="UE_branch_node" style="zoom:60%;" />
-
-- Comparison：比较节点，如Less than、Greater than、Equal等等，并返回一个boolean。
-
-- 添加注释：点击C键，可为蓝图添加注释块。
-
-​	下述是使用蓝图的简单例子：
-
-<img src="/UE_level_blue_print_simple_sample.png" alt="UE_level_blue_print_simple_sample" style="zoom:70%;" />
-
-## 2 命名规则
-
-<img src="/UE_naming_rule.png" alt="UE_naming_rule" style="zoom:70%;" />
-
-## 3 蓝图类
-
-​	如下步骤可为常见中的Actor创建一个蓝图类：
-
-<img src="/UE_create_bp_class.png" alt="UE_create_bp_class" style="zoom:60%;" />
-
-### 1) 蓝图函数
-
-​	Functions execute blocks of blueprints that makes our game do things。
-
-​	Functions可以让蓝图块保持**整洁**，让蓝图块可以**重用**。
-
-- 创建蓝图function的两种方法：
-  ① 在左侧菜单栏FUNCTIONS旁点击加号。
-  ② 框选要组成方法的节点，点击鼠标右键，选择Collapse to Function如下所示：
-  <img src="/UE_make_blueprint_function.png" alt="UE_make_blueprint_function" style="zoom:80%;" />
-- 入参/出参：在方法蓝图右侧的详细面板中，可为方法添加入参/出参。
-  注意，出参是一个**Return Node**，需要在最后被执行。
-- Pure Function
-  Side Effect：Observable effect of a function。
-  Pure Function：Function with no side effect。Pure Function通常是Get某个值，或比较某个值。
-  按下述方法可以将一个函数转变为pure函数：
-  <img src="/UE_make_pure_function.png" alt="UE_make_pure_function" style="zoom:50%;" />
-  此时，在pure函数就**没有执行引脚**了：
-  <img src="/UE_pure_function.png" alt="UE_pure_function" style="zoom:60%;" />
-
-### 2) 成员函数
-
-​	成员函数不在关卡的蓝图上，而在某个特定的**蓝图类**中。蓝图类的成员函数对面向对象编程很重要。
-
-​	每个蓝图成员函数都有一个参数，**该参数是要调用该函数的蓝图类实例**。
-
-- Self：A node available in member function, always points to the current instance。Self是个节点，用于在成员函数中，获取当前实例。
-- 创建成员函数：
-  <img src="/UE_make_member_function.png" alt="UE_make_member_function" style="zoom:60%;" />
-
-### 3) 蓝图函数库
-
-​	将函数放到蓝图函数库(一种资产)中，让每个蓝图都能访问。
-
-# UE基础
+# UE系统
 
 ## 1 坐标系和单位
 
@@ -286,23 +213,9 @@ typora-root-url: pic
 
   此阶段会将半透明的渲染纹理混合到最终的场景颜色中。
 
-## 4 UE的材质
+# UE蓝图
 
-​	本小节参考自：[UE：材质系统](https://mp.weixin.qq.com/s?__biz=MzA5MDcyOTE5Nw==&mid=2650549692&idx=1&sn=d23db44e95de518437a4f90dff057baf&chksm=880fb23ebf783b2860456c2dd3104236d47b0ecf562a058f4f75096f12580291a77b24b35626&scene=178&cur_album_id=2518511104424198145&search_click_id=#rd)。
-
-​	UE的材质定义为：Controlling the appearance of surfaces in the world using shaders.
-
-​	材质的三大要素为：
-
-- UMaterial类：对应材质编辑器中的资源属性。
-- FMaterialResource类：依据`RHIFeatureLevel`(DirectX/Vulkan/Metal/OpenGL ES等)和材质质量`EMaterialQualityLevel`(高/中/低)，将UMaterial生成HLSL代码。
-- FMaterialRenderProxy类：将编译后的shader传递给渲染层，通过材质函数完成渲染结果。
-
-​	其中，UMaterial面向艺术家，FMaterialResource面向机器，FMaterialRenderProxy产生最终显示效果，面向人。
-
-​	注意，UMaterial : FMaterialResource : FMaterialRenderProxy是1 : N : 1的关系。
-
-# GamePlay Framework
+# UE GamePlay
 
 ​	GamePlay框架是虚幻引擎为开发者提供的工具箱：
 
@@ -400,7 +313,7 @@ typora-root-url: pic
 
 ​	组件之间是有**父子关系**的。当你调整父组件的属性时，子组件也会跟随变化。
 
-# 动画蓝图
+# UE动画系统
 
 ## 1 创建动画蓝图角色
 
@@ -427,21 +340,21 @@ typora-root-url: pic
 
 ## 2 动画优化
 
-### 1) 优化AI旋转
+### 1) 优化角色旋转
 
-- 原因
+​	默认情况下PlayerController控制角色的移动。但PlayerController的tick周期约为0.1s，不平滑。
 
-  默认，AI的旋转由Controller决定。Controller的tick周期约为0.1s，因此并不平滑：
+​	CharacterMovementComponent中处理完善了角色移动表现，通过该组件移动，会更平滑。
+
+- 在角色蓝图中，选择Character，在详细列表的Pawn下，取消Use Controller Rotation Yaw：
 
   <img src="/UE_ControllerYaw.png" alt="UE_ControllerYaw" style="zoom:80%;" />
 
-- 解决方案
+- 选择CharacerMoveComponent，在详细列表中勾选Use Controller Desired Rotation。
 
-  **取消上述勾选**，在角色蓝图中，选择如下:
+  此时当Contoller的朝向更新时，移动组件会用Controller新的朝向以及设置的**旋转速度**，实施一个平滑的旋转。
 
   <img src="/UE_UseControllerRotation.png" alt="UE_UseControllerRotation" style="zoom:80%;" />
-
-  其意思是：当Contoller的朝向更新时，角色蓝图会用设置的**旋转速度**和**新的朝向**，实施一个平滑的旋转。
 
 ## 3 动画重定向
 
@@ -521,7 +434,47 @@ typora-root-url: pic
 
 <img src="/UE_BlendAnimation.png" alt="UE_BlendAnimation" style="zoom:60%;" />
 
-# 物理系统
+## 5 Root Motion
+
+​	Root Motion：动画控制**角色本身**运动的一种**动画机制**。
+
+### 1) Root Motion产生的原因
+
+​	角色动画**本质**：**胶囊体的位移**，动画在角色(胶囊体)位移时播放，使其看上去在走/跑/跳。实际拥有**运动权**角色，不是动画。
+
+​	有些行为要表现得生动形象，需要精确且复杂的位移，很难靠程序控制。
+
+​	综上，产生了Root Motion：**让动画拥有角色的控制权**——做动画的时候，让角色产生相应的位移。
+
+### 2) Root Motion的实现原理
+
+- 设置一个不呈现任何视觉表现的**Root**节点，只用于**绑定角色位置**；
+- 当**角色**拥有运动控制权时，因为Root和角色绑定，Root跟随角色一起运动，从而带动动画运动；
+- 当**动画**拥有运动控制权时，因为角色和Root绑定，角色会跟随动画一起运动；
+
+### 3) 使用Root Motion
+
+- 让**动画资产**可以使用RootMotion机制——**动画资产**中勾选EnableRootMotion：
+
+  <img src="/UE_EnableRootMotion.png" alt="UE_EnableRootMotion" style="zoom:80%;" />
+
+- 让角色把运动控制权交给Root Motion机制——在**动画蓝图**中，选择对应的RootMotionMode：
+
+  <img src="/UE_RootMotionMode.png" alt="UE_RootMotionMode" style="zoom:80%;" />
+
+  默认是Root Motion from Montages Only：仅从启动了根运动的**蒙太奇**中提取运动数据，应用到角色；
+
+  No Root Motion Extraction：不管动画是否启动了Root Motion，角色**不提取**根运动，因此动画不会影响角色；
+
+  Ignore Root Motion：提取根运动，但不应用到角色，因此动画不会影响角色(除非有自定义操作)；
+
+  Root Motion from Everything：提取**每个**会构建最终姿势的动画资源的**根运动**。各个根运动数据根据构成该姿势的权重进行混合，并影响角色位置。
+
+- 注意，只有动画蓝图或动画蒙太奇能提起根运动，并作用于角色。
+
+## 6 动画蒙太奇
+
+# UE物理系统
 
 ## 1 三种碰撞响应
 
@@ -549,17 +502,29 @@ typora-root-url: pic
 
   将Mesh的碰撞预设设置为None，把外部胶囊体的碰撞预设设置为目标类型，从而可以节约一点性能。
 
+# UE材质
+
+​	UE的材质定义为：Controlling the appearance of surfaces in the world using shaders.(参考自: [UE：材质系统](https://mp.weixin.qq.com/s?__biz=MzA5MDcyOTE5Nw==&mid=2650549692&idx=1&sn=d23db44e95de518437a4f90dff057baf&chksm=880fb23ebf783b2860456c2dd3104236d47b0ecf562a058f4f75096f12580291a77b24b35626&scene=178&cur_album_id=2518511104424198145&search_click_id=#rd))
+
+​	材质的三大要素为：
+
+- UMaterial类：对应材质编辑器中的资源属性。
+- FMaterialResource类：依据`RHIFeatureLevel`(DirectX/Vulkan/Metal/OpenGL ES等)和材质质量`EMaterialQualityLevel`(高/中/低)，将UMaterial生成HLSL代码。
+- FMaterialRenderProxy类：将编译后的shader传递给渲染层，通过材质函数完成渲染结果。
+
+​	其中，UMaterial面向艺术家，FMaterialResource面向机器，FMaterialRenderProxy产生最终显示效果，面向人。
+
+​	注意，UMaterial : FMaterialResource : FMaterialRenderProxy是1 : N : 1的关系。
+
 # UE C++
 
-## 1 基础
-
-### 1) C++工程编译缓存清理
+## 1 C++工程编译缓存清理
 
 ① 在UE5.4中，删除Binaries、DerivedDataCache、Intermediate、Saved、.vs这5个文件夹以及.sln工程文件。
 
 ② 右键点击.uproject文件，点击Generate Visual Studio project files。
 
-### 2) 字符串
+## 2 字符串
 
 - L前缀
   C++字符串前加L表示该字符串是**Unicode字符串**。

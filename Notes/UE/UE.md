@@ -4,19 +4,20 @@ typora-root-url: pic
 
 # 基础操作
 
-## 快捷键
+## 1 快捷键
 
-场景
+### 1) 场景快捷键
 
 - ctrl + d：复制actor；
 - alt + 移动gizmo：复制actor到指定位置；
 - ctrl + p：打开资产；
 
-蓝图
+### 2) 蓝图快捷键
 
 - home：将选中的蓝图聚焦至视口中间；
+- q：多选蓝图节点，按"q"键，可将他们对齐；
 
-## 降低项目默认消耗
+## 2 降低项目默认消耗
 
 - 取消全局光照
 
@@ -472,6 +473,36 @@ typora-root-url: pic
 
 - 注意，只有动画蓝图或动画蒙太奇能提起根运动，并作用于角色。
 
+### 4) RootMotion动画和InPlace动画的区别
+
+​	RootMotion动画和InPlace动画的本质区别：**根节点是否有位移**。
+
+- InPlace动画根节点没有位移
+
+  InPlace动画可以使用RootMotion机制播放。播放时，角色将由于根节点位置的绑定而待在原地。
+
+- RootMotion动画根节点有位移
+
+  RootMotion动画按RootMotion机制播放时，角色把运动权交给动画，角色跟随动画进行位移。
+
+  若RootMotion动画不按RootMotion机制播放，会出现下述问题：
+
+  <img src="/UE_NoRootMotion.gif" alt="UE_NoRootMotion" style="zoom:67%;" />
+
+  可以看到，代表角色的胶囊体没有移动，只是角色的网格发生了位移，并在动画完成后会重置。
+
+- 总结
+
+  分类为InPlace的动画，不应使用RootMotion机制播放；分类为RootMotion的动画，应该使用RootMotion播放。
+
+### 5) 使用RootMotion机制可能会遇到的问题
+
+#### 5.1) 动画的根节点在Z轴方向有位移
+
+- 原因：这个位移和**重力**对角色在Z轴上的控制权产生**冲突**，角色将不会在Z轴上随着根骨骼进行运动。
+- 解决方案：通常，动画**根节点**负责角色在**水平方向**上的移动，让脊椎末端节点跟随根节点上下移动(此时根节点的上下移动由**重力**控制)。
+- 总结：动画根节点不要有Z方向的位移。
+
 ## 6 动画蒙太奇
 
 # UE物理系统
@@ -518,13 +549,62 @@ typora-root-url: pic
 
 # UE C++
 
-## 1 C++工程编译缓存清理
+## 1 C++工程
+
+### 1) 工程结构
+
+- C++工程
+
+  <img src="/UE_CPlusPlusProject.png" alt="UE_CPlusPlusProject" style="zoom:70%;" />
+
+- UBT(Unreal Build Tool)
+
+  自定义的工具，负责管理和配置在不同配置下UE源代码的构建过程。﻿
+
+  识别和处理UE的模块化架构，确保各个模块正确地编译和链接。
+
+  扫描头文件，查找UHT相关的关键字，生成包含所有需要解析的模块和源文件的清单，供UHT使用。
+
+- UHT(Unreal Head Tool)
+
+  负责解析C++头文件中的特定宏，生成与反射相关的代码。
+
+  处理UObject类的相关代码，如生成GENERATED_BODY()宏以及.generated.h文件中的相关定义。
+
+  当头文件发生变化时，UHT会被调用来更新反射数据，确保反射系统与代码同步。
+
+### 2) 头文件分析
+
+<img src="/UE_HeaderInfo.png" alt="UE_HeaderInfo" style="zoom:70%;" />
+
+- GENERATED_BODY()
+- GENERATED_UCLASS_BODY()
+- UCLASS()
+- UPROPERTY()
+- UFUNCTION()
+- USTRUCT()
+- UENUM()
+
+### 2) 清理编译缓存
 
 ① 在UE5.4中，删除Binaries、DerivedDataCache、Intermediate、Saved、.vs这5个文件夹以及.sln工程文件。
 
 ② 右键点击.uproject文件，点击Generate Visual Studio project files。
 
-## 2 字符串
+## 2 C++命名规则
+
+- 类名前缀
+  - U：UObject派生类，如UComponent；
+  - A：AActor派生类，如APlayerController；
+  - S：SWidget派生类，用于Slate UI框架控件；
+  - F：大多数其他类，如FString、FVector；
+  - I：抽象接口类。
+- 特定前缀
+  - T：模板类，如TArray、TMap；
+  - E：枚举类，如ECollisionChannel；
+  - G：全局对象，如GWorld。
+
+## 3 字符串
 
 - L前缀
   C++字符串前加L表示该字符串是**Unicode字符串**。
@@ -545,3 +625,137 @@ typora-root-url: pic
   ```
 
 - FString：UE封装的动态字符串。
+
+## 4 硬引用和软引用(资产加载)
+
+​	本小节主要参考自：[资源加载(一) 硬&软引用加载资源](https://blog.csdn.net/qq_52179126/article/details/130061974)。
+
+### 1) 硬引用(Hard Reference)
+
+​	使用硬引用加载对象A时，若A内部引用对象B，会导致B直接被加载到内存中；若B内部引用了C，C也会被加载到内存中。
+
+​	硬引用的加载链是递归的，可能会导致**内存迅速降低**，造成卡顿。
+
+### 2) 软引用(Soft Reference)
+
+​	软引用通过下述方式存在：
+
+- 对象A通过间接机制引用对象B，如FSoftObjectPath
+
+#### 2.1) FSoftObjectPath
+
+​	[FSoftObjectPath的API文档在此](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/CoreUObject/UObject/FSoftObjectPath)。
+
+​	对象A通过字符串形式的**对象路径**来引用对象B，软引用对象不会主动地将对象加载到内存中，需要**手动进行同步/异步加载**。
+
+​	此时，软引用不存放资源本身。
+
+​	**FSoftObjectPath**是一个简单的结构体，其内部有一个字符串包含**资源的完整名称**。
+
+​	如果在类中添加这个类，它就会像`UObject *`属性一样显示在编辑器中。它还会正确处理烘焙和重定向：
+
+```c++
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+FSoftObjectPath ObjectSoftRef;
+
+//AllowedClasses主要用于在Editor中进行筛选, 不影响其在C++中的使用
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (AllowedClasses = "SkeletalMesh,StaticMesh"))
+FSoftObjectPath MeshSoftRef;
+
+//---------------- API ----------------------
+//尝试通过路径下查找已加载的资产, 若资产未加载, 返回空指针
+UObject* ResolveObject()
+
+//尝试去加载资产, 该方法会调用很耗时的LoadObject()
+FSoftObjectPath::TryLoad()
+```
+
+#### 2.2) FSoftClassPath
+
+​	FSoftClassPath功能类似于FSoftObjectPath，不过FSoftClassPath专门用于对**UClass***的软引用。
+
+#### 2.3) FSoftObjectPtr
+
+​	本小节主要参考自：[虚幻官方文档](https://dev.epicgames.com/documentation/zh-cn/unreal-engine/asynchronous-asset-loading-in-unreal-engine)。
+
+​	FSoftObjectPtr是一个对UObject的弱引用，其内部包含FSoftObjectPath成员对象。
+
+- 设置特定类的模板，可以**限制编辑器UI**仅允许选择特定类；
+- 如果被引用资源存不在内存中，可调用`ToSoftObjectPath()`找到资源路径，使用同步/异步的方式加载资源。这对于需要**按需异步加载**的资产很有用；
+- 不能暴露给蓝图。
+- **TSoftObjectPtr**是对FSoftObjectPtr模板化，内部是基于FSoftObjectPtr二次封装。
+
+​	其有如下接口：
+
+```c++
+//父类的接口, 检查是否没有引用当前有效的UObject;返回true, 即当前的UObject是无效的, 但未来可能被加载
+bool IsPending ()
+
+//父类接口, 检查当前是否引用有效的UObject
+bool IsValid ()
+```
+
+#### 2.4) 资源弱引用类图
+
+<img src="/UE_SoftObjectPtr.png" alt="UE_SoftObjectPtr" style="zoom:80%;" />
+
+## 5 委托Delegate
+
+​	本小节参考自：[一文理解透UE委托Delegate](https://zhuanlan.zhihu.com/p/460092901)。
+
+​	UE委托的详细的API文档可参考**Delegate.h**文件，具体模版参见**DelegateCombinations.h**文件。
+
+### 1) 本质和设计思想
+
+​	委托是一种类型，属于C++的模版元编程，其包含了一种**类型安全的回调机制**。
+
+- 谁发出通知：拥有委托实例的对象，即**发布者**；
+- 接接收通知：其他类对象可将成员函数绑定到委托实例上；
+- 何时通知：发布者调用委托实例的方法，且可携带参数。
+
+### 2) 委托分类
+
+#### 2.1) 单播委托
+
+​	一次只能绑定一个函数；
+
+​	通过下述宏，生成关联的委托类实例：
+
+| 函数签名类型                       | 宏声明                                                       |
+| ---------------------------------- | :----------------------------------------------------------- |
+| void Function()                    | DECLARE_DELEGATE( DelegateName )                             |
+| void Function(Param1)              | DECLARE_DELEGATE_OneParam(DelegateName, Param1Type)          |
+| void Function(Param1>, Parm2)      | DECLARE_DELEGATE_TwoParams(DelegateName, Param1Type, Param2Type) |
+| void Function(Param1,  Parm2, ...) | DECLARE_DELEGATE_\<Num\>Params(DelegateName, Param1Type, Param2Type, ...) |
+| RetVal Function()                  | DECLARE_DELEGATE_RetVal(RetValType, DelegateName )           |
+| RetVal Function(Parm1)             | DECLARE_DELEGATE_RetVal_OneParam(RetValType, DelegateName, Param1Type) |
+| RetVal Function(Parm1, Parm2)      | DECLARE_DELEGATE_RetVal_TwoParams(RetValType, DelegateName, Param1Type, Param2Type) |
+| RetVal Function(Param1,Parm2, ...) | DECLARE_DELEGATE_RetVal_\<Num\>Params(RetValType, DelegateName, Param1Type, Param2Type, ...) |
+
+​	委托类中，设定了很多成员函数，用来绑定不同类型的函数。
+
+#### 2.2) 多播委托
+
+​	可以绑定多个函数。广播时，所有绑定的函数会按**绑定顺序**依次执行。
+
+```c++
+//定义void Function()的多播委托
+#define DECLARE_MULTICAST_DELEGATE( DelegateName ) FUNC_DECLARE_MULTICAST_DELEGATE( DelegateName, void )
+
+//定义void Function(Param1)的多播委托
+#define DECLARE_MULTICAST_DELEGATE_OneParam( DelegateName, Param1Type ) FUNC_DECLARE_MULTICAST_DELEGATE( DelegateName, void, Param1Type )
+
+//其余和单播类似, 不再赘述
+......
+```
+
+#### 2.3) 动态委托
+
+​	一种**特殊的单播/多播委托**，主要用于**在蓝图和 C++ 之间通信**。
+
+​	动态委托本质集成了**UObject的反射系统**，让其可支持序列化存储到本机和蓝图操作。
+
+​	动态委托概念上与前两类无异，性能和功能弱于前两类。
+
+
+

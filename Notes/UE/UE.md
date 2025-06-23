@@ -551,8 +551,6 @@ typora-root-url: pic
 
 ## 1 C++工程
 
-### 1) 工程结构
-
 - C++工程
 
   <img src="/UE_CPlusPlusProject.png" alt="UE_CPlusPlusProject" style="zoom:70%;" />
@@ -573,18 +571,6 @@ typora-root-url: pic
 
   当头文件发生变化时，UHT会被调用来更新反射数据，确保反射系统与代码同步。
 
-### 2) 头文件分析
-
-<img src="/UE_HeaderInfo.png" alt="UE_HeaderInfo" style="zoom:70%;" />
-
-- GENERATED_BODY()
-- GENERATED_UCLASS_BODY()
-- UCLASS()
-- UPROPERTY()
-- UFUNCTION()
-- USTRUCT()
-- UENUM()
-
 ### 2) 清理编译缓存
 
 ① 在UE5.4中，删除Binaries、DerivedDataCache、Intermediate、Saved、.vs这5个文件夹以及.sln工程文件。
@@ -604,7 +590,149 @@ typora-root-url: pic
   - E：枚举类，如ECollisionChannel；
   - G：全局对象，如GWorld。
 
-## 3 字符串
+## 3 反射系统
+
+​	虚幻引擎的**反射系统**用大量的宏来封装C++类，为该类提供引擎和编辑器的内部功能。
+
+​	本小节主要参考自：[虚幻引擎反射系统](https://dev.epicgames.com/documentation/zh-cn/unreal-engine/reflection-system-in-unreal-engine?application_version=5.5)。
+
+### 1) 反射系统中的宏
+
+#### 1.1) UCLASS宏
+
+- UCLASS宏的作用：生成**UClass对象**
+
+​	被UCLASS宏标记的类，UHT会解析该类的头文件，生成对应的`.generated.h`和`.gen.cpp`文件，其中包含`UClass`相关代码。
+
+- UClass注册流程
+
+  程序启动时，每个`UClass`通过静态构造函数注册到全局`GUObjectArray`全局对象数组中。
+
+- UClass是UE反射系统的**核心**，它存储所有与反射相关的元数据：
+
+  - UClass 内存布局示例：
+
+    ```c++
+    +-----------------------+
+    |   UObjectBase (基类)  |
+    +-----------------------+
+    |   FName Name          | → 类名 (如 "AActor")
+    |   UClass* SuperClass  | → 父类指针
+    |   UObject* ClassDefaultObject | → 类默认对象(CDO)
+    |   TArray<UProperty*>  | → 属性列表
+    |   TArray<UFunction*>  | → 函数列表
+    |   TMap<FName, ...>    | → 元数据字典
+    +-----------------------+
+    ```
+
+  - 所有通过`UPROPERTY()`, `UFUNCTION()`, `UCLASS()`, `USTRUCT()`等标记的元数据都会存储在`UClass`及其相关的`UProperty`/`UFunction`列表中。
+
+  - 可从类默认对象(`UObject* ClassDefaultObject`，`CDP`)中获取默认属性；
+
+- UClass为引擎提供了如下支持：
+  - 运行时类型查询和转换；
+  - 使用UClass*动态创建对象和反射操作；
+  - 驱动编辑器(细节面板等)和蓝图(蓝图继承C++类)或调用C++函数；
+
+#### 1.2) GENERATED_BODY()宏
+
+​	GENERATED_BODY()主要为**反射系统**和**序列化机制**生成必要的代码。
+
+​	这些代码在**正式编译前**由UHT生成，保存在"xxx.generated.h"中。
+
+​	在类的定义中，GENERATED_BODY()应被放在**类的最开始位置**，确保生成的代码能够正确地被编译器处理。
+
+```c++
+#include "MyClass.generated.h"
+
+UCLASS()
+class MYPROJECT_API UMyClass : public UObject
+{   //放在类的最开始位置
+    GENERATED_BODY()
+public:
+    //成员变量和函数
+};
+```
+
+### 2) UObject
+
+​	UE最核心的基类之一，几乎所有的UE类都**直接或间接继承自UObject**，提供了许多重要的基础功能。
+
+​	UObject包含GC+反射+序列化，构成UE的核心框架。
+
+​	UObject是**跨系统集成中心**：连接编辑器、蓝图、网络、物理等子系统。
+
+#### 2.1) 功能
+
+- 垃圾回收
+
+  UObject只能在运行时通过NewObject构建，不能使用c++的new或delete：
+
+  ```c++
+  // 创建对象（自动加入GC系统）
+  UMyObject* Obj = NewObject<UMyObject>();
+  ...
+  // 当 Obj 不再被引用时，GC自动回收
+  ```
+
+- 运行时类型信息
+
+  ```c++
+  // 检查对象类型
+  if (Obj->IsA(UCharacter::StaticClass())) {...}
+  
+  // 安全类型转换
+  if (UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(Obj)) {...}
+  ```
+
+- 序列化
+
+- 网络复制
+
+- 默认属性变化及更新
+
+  ```c++
+  // 获取 CDO 并读取默认值
+  UMyObject* CDO = GetDefault<UMyObject>();
+  float DefaultHealth = CDO->Health;
+  ```
+
+#### 2.2) 自定义UObject
+
+```c++
+#pragma once
+
+#include 'Object.h'
+#include 'MyObject.generated.h'
+
+UCLASS()
+class MYPROJECT_API UMyObject : public UObject
+{
+	GENERATED_BODY()
+};
+```
+
+① #include 'MyObject.generated.h'必须是**最后一个**#include指令；
+
+② UCLASS使`UMyObject`能被UHT识别，并生成反射信息；
+
+③ MY_PROJECT_API让UMyObject能够被其他模块使用；
+
+④ GENERATED_BODY()生成引擎代码。
+
+#### 2.3) 销毁UObject
+
+​	对象不被引用后，垃圾回收系统将自动进行对象销毁。这意味着没有任何`UPROPERTY`指针、引擎容器、`TStrongObjectPtr`或类实例拥有对它的强引用。
+
+- MarkPendingKill()
+
+  可在对象上直接调用，数将把指向对象的所有指针设为`NULL`，并从全局搜索中移除对象。对象将在下一次垃圾回收过程中被删除。
+
+- 强引用
+
+  强引用会将UObject保留。如果不想使用强引用，那么可使用弱指针，或者变为一个普通指针由程序员手动清除。
+
+## 4 字符串
 
 - L前缀
   C++字符串前加L表示该字符串是**Unicode字符串**。
@@ -626,7 +754,7 @@ typora-root-url: pic
 
 - FString：UE封装的动态字符串。
 
-## 4 硬引用和软引用(资产加载)
+## 5 硬引用和软引用(资产加载)
 
 ​	本小节主要参考自：[资源加载(一) 硬&软引用加载资源](https://blog.csdn.net/qq_52179126/article/details/130061974)。
 
@@ -699,7 +827,7 @@ bool IsValid ()
 
 <img src="/UE_SoftObjectPtr.png" alt="UE_SoftObjectPtr" style="zoom:80%;" />
 
-## 5 委托Delegate
+## 6 委托Delegate
 
 ​	本小节参考自：[一文理解透UE委托Delegate](https://zhuanlan.zhihu.com/p/460092901)。
 

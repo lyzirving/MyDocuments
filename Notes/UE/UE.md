@@ -654,6 +654,8 @@ public:
 };
 ```
 
+#### 1.3) UPROPERTY宏
+
 ### 2) UObject
 
 ​	UE最核心的基类之一，几乎所有的UE类都**直接或间接继承自UObject**，提供了许多重要的基础功能。
@@ -720,7 +722,49 @@ class MYPROJECT_API UMyObject : public UObject
 
 ④ GENERATED_BODY()生成引擎代码。
 
-#### 2.3) 销毁UObject
+#### 2.3) 构造UObject
+
+- NewObject是最简单的UObject工厂方法。
+
+  ```c++
+  template< class T >	
+  T* NewObject(
+      UObject* Outer=(UObject*)GetTransientPackage(),
+      UClass* Class=T::StaticClass()	
+  )
+  ```
+
+  Outer主要用于管理对象的生命周期(通过垃圾回收)和组织对象树(用于资源管理和序列化等)：
+
+  - **垃圾回收**中，新对象将成为Outer的子对象；
+  - 当Outer被垃圾回收时，它的所有子对象(包括这个新对象)也会被回收；
+  - 组织**对象层次结构**，比如一个Actor的组件，其Outer通常设置为该Actor；
+  - 在**序列化**(保存/加载)时，对象树的结构依赖于Outer的层级关系；
+  - 如果没有提供Outer，新对象会被视为“根对象”，只有通过显式标记或添加根引用才能避免被垃圾回收。
+
+- NewNamedObject通过允许为新实例指定一个名称以及对象标记]和一个要指定为参数的模板对象。
+
+  ```c++
+  template< class TClass >	
+  TClass* NewNamedObject(
+      UObject* Outer,		
+      FName Name,	
+      //对象标记: 快速而简洁地描述对象。
+      //各种标志来描述对象的类型、垃圾收集如何处理它、对象在其生命周期中所处的阶段等。
+      EObjectFlags Flags = RF_NoFlags,	
+      UObject const* Template=NULL
+  )
+  ```
+
+- ConstructObject
+
+  ConstructObject有完全灵活性。
+
+  - 其调用 `StaticConstructObject()` ，分配对象，执行 `ClassConstructor` ；
+  - 执行任何初始化：如加载配置属性，加载本地化属性和实例化组件；
+  - 自UE4.16以后，`ConstructObject`已被废弃，取而代之的是`NewObject`模板函数。
+
+#### 2.4) 销毁UObject
 
 ​	对象不被引用后，垃圾回收系统将自动进行对象销毁。这意味着没有任何`UPROPERTY`指针、引擎容器、`TStrongObjectPtr`或类实例拥有对它的强引用。
 

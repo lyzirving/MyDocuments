@@ -27,7 +27,7 @@ typora-root-url: pic
 
   <img src="/UE_set_anti_aliase.png" alt="UE_set_anti_aliase" style="zoom:80%;" />
 
-# UE系统
+# UE基础
 
 ## 1 坐标系和单位
 
@@ -215,6 +215,10 @@ typora-root-url: pic
   此阶段会将半透明的渲染纹理混合到最终的场景颜色中。
 
 # UE蓝图
+
+## 1 蓝图通信
+
+​	本小节参考自：[虚幻官方：蓝图通信用法](https://dev.epicgames.com/documentation/zh-cn/unreal-engine/blueprint-communication-usage-in-unreal-engine?application_version=5.5)。
 
 # UE GamePlay
 
@@ -533,20 +537,6 @@ typora-root-url: pic
 
   将Mesh的碰撞预设设置为None，把外部胶囊体的碰撞预设设置为目标类型，从而可以节约一点性能。
 
-# UE材质
-
-​	UE的材质定义为：Controlling the appearance of surfaces in the world using shaders.(参考自: [UE：材质系统](https://mp.weixin.qq.com/s?__biz=MzA5MDcyOTE5Nw==&mid=2650549692&idx=1&sn=d23db44e95de518437a4f90dff057baf&chksm=880fb23ebf783b2860456c2dd3104236d47b0ecf562a058f4f75096f12580291a77b24b35626&scene=178&cur_album_id=2518511104424198145&search_click_id=#rd))
-
-​	材质的三大要素为：
-
-- UMaterial类：对应材质编辑器中的资源属性。
-- FMaterialResource类：依据`RHIFeatureLevel`(DirectX/Vulkan/Metal/OpenGL ES等)和材质质量`EMaterialQualityLevel`(高/中/低)，将UMaterial生成HLSL代码。
-- FMaterialRenderProxy类：将编译后的shader传递给渲染层，通过材质函数完成渲染结果。
-
-​	其中，UMaterial面向艺术家，FMaterialResource面向机器，FMaterialRenderProxy产生最终显示效果，面向人。
-
-​	注意，UMaterial : FMaterialResource : FMaterialRenderProxy是1 : N : 1的关系。
-
 # UE C++
 
 ## 1 C++工程
@@ -656,7 +646,142 @@ public:
 
 #### 1.3) UPROPERTY宏
 
-### 2) UObject
+​	在类声明中标记成员变量为UPROPERTY，使其获得引擎支持，如下所示：
+
+```c++
+UCLASS()
+class MYPROJECT_API AMyActor : public AActor
+{
+    GENERATED_BODY()
+        
+    UPROPERTY()
+    int32 Count;    
+    
+    UPROPERTY(EditAnywhere, Category="Stats")
+    float Health;
+};
+```
+
+​	UPROPERTY的作用流程如下：
+
+UHT扫描代码 -> 发现UPROPERTY -> 生成反射数据 -> 写入执generated.h -> 编译器注册
+
+### 2) 反射系统中的模版
+
+#### 2.1) TSubclassOf
+
+​	`TSubclassOf`是一个**强类型的UClass包装模板**，它在编译时提供类型安全机制。
+
+- `TSubclassOf`内部存储的是`UClass*`，而不是`UObject*`，如下源码所示：
+
+  ```c++
+  template <typename T>
+  class TSubclassOf
+  {
+      ......
+  private:
+  	TObjectPtr<UClass> Class = nullptr;
+  }
+  ```
+
+- UClass指针指向的必须是模板参数T或者T的子类；
+
+- 当使用`TSubclassOf<AActor>`时：
+
+  - 可以安全存储AActor的UClass；
+  - 可以存储ACharacter的UClass(ACharacter继承自AActor)；
+  - 但不能存储UObject的UClass，因为UObject是AActor的父类。
+
+- 当`TSubclassOf`指定为泛型UClass时，它会执行运行时类型检查：
+
+  ```c++
+  UClass* ClassA = UDamageType::StaticClass();
+  
+  TSubclassOf<UDamageType> ClassB;
+  ClassB = ClassA;// Performs a runtime check
+  
+  TSubclassOf<UDamageType_Lava> ClassC;
+  ClassB = ClassC; // Performs a compile time check
+  ```
+
+### 3) 智能指针库
+
+​	**虚幻智能指针库** 是C++11智能指针的自定义实现，旨在减轻内存分配和追踪的负担。
+
+​	UObject的垃圾回收系统与UE的智能指针是两套**独立的机制**，但它们可以一起工作，但要循序下述原则：
+
+- **UObject必须由GC管理**：所有派生自UObject的对象都应该通过GC系统进行生命周期管理。
+- **智能指针用于非UObject对象**的生命周期管理。
+
+#### 3.1) 共享指针TSharedPtr
+
+- 通过引用计数**共享所有权**；
+- **自动失效**；
+- 弱指针中断循环引用。
+
+```c++
+// 创建一个空白的共享指针
+TSharedPtr<FMyObjectType> EmptyPointer;
+// 为新对象创建一个共享指针
+TSharedPtr<FMyObjectType> NewPointer(new FMyObjectType());
+// 从共享引用创建一个共享指针
+TSharedRef<FMyObjectType> NewReference(new FMyObjectType());
+TSharedPtr<FMyObjectType> PointerFromReference = NewReference;
+// 创建一个线程安全的共享指针
+TSharedPtr<FMyObjectType, ESPMode::ThreadSafe> NewThreadsafePointer = MakeShared<FMyObjectType, ESPMode::ThreadSafe>(MyArgs);
+```
+
+#### 3.2) 共享引用TSharedRef
+
+​	共享引用实际为：不能为未初始化或分配为空的智能指针类型。
+
+​	共享引用无法**重置**共享引用、向其指定空对象，或创建空白引用。因此共享引用固定包含有效对象，甚至未拥有 `IsValid` 方法。
+
+```c++
+//创建新节点的共享引用
+TSharedRef<FMyObjectType> NewReference = MakeShared<FMyObjectType>();
+```
+
+​	在无有效对象的情况下尝试创建的共享引用将不会编译：
+
+```c++
+//以下两者均不会编译：
+TSharedRef<FMyObjectType> UnassignedReference;
+TSharedRef<FMyObjectType> NullAssignedReference = nullptr;
+//以下会编译，但如NullObject实际为空则断言。
+TSharedRef<FMyObjectType> NullAssignedReference = NullObject;
+```
+
+#### 3.3) 弱指针TWeakPtr
+
+​	**弱指针**存储对象的弱引用，不会阻止其引用的对象被销毁。
+
+​	在访问弱指针引用的对象前，应使用 `Pin` 函数生成共享指针，确保其引用的对象存在。
+
+​	如只需要确定弱指针是否引用对象，可将其与 `nullptr` 比较，或在之上调用 `IsValid`。
+
+- 构造
+
+  ```c++
+  //分配新的数据对象，并创建对其的强引用。
+  TSharedRef<FMyObjectType> ObjectOwner = MakeShared<FMyObjectType>();
+  //创建指向新数据对象的弱指针。
+  TWeakPtr<FMyObjectType> ObjectObserver(ObjectOwner);
+  ```
+
+- 使用
+
+  ```c++
+  if (ObjectObserver.Pin())
+  {
+      //只当ObjectOwner非对象的唯一拥有者时，此代码才会运行。
+      doSomething();
+  }
+  ```
+
+#### 3.4) TUniquePtr
+
+### 4) UObject
 
 ​	UE最核心的基类之一，几乎所有的UE类都**直接或间接继承自UObject**，提供了许多重要的基础功能。
 
@@ -664,7 +789,7 @@ public:
 
 ​	UObject是**跨系统集成中心**：连接编辑器、蓝图、网络、物理等子系统。
 
-#### 2.1) 功能
+#### 4.1) 功能
 
 - 垃圾回收
 
@@ -699,7 +824,7 @@ public:
   float DefaultHealth = CDO->Health;
   ```
 
-#### 2.2) 自定义UObject
+#### 4.2) 自定义UObject
 
 ```c++
 #pragma once
@@ -722,7 +847,7 @@ class MYPROJECT_API UMyObject : public UObject
 
 ④ GENERATED_BODY()生成引擎代码。
 
-#### 2.3) 构造UObject
+#### 4.3) 构造UObject
 
 - NewObject是最简单的UObject工厂方法。
 
@@ -764,7 +889,7 @@ class MYPROJECT_API UMyObject : public UObject
   - 执行任何初始化：如加载配置属性，加载本地化属性和实例化组件；
   - 自UE4.16以后，`ConstructObject`已被废弃，取而代之的是`NewObject`模板函数。
 
-#### 2.4) 销毁UObject
+#### 4.4) 销毁UObject
 
 ​	对象不被引用后，垃圾回收系统将自动进行对象销毁。这意味着没有任何`UPROPERTY`指针、引擎容器、`TStrongObjectPtr`或类实例拥有对它的强引用。
 
@@ -778,25 +903,11 @@ class MYPROJECT_API UMyObject : public UObject
 
 ## 4 字符串
 
-- L前缀
-  C++字符串前加L表示该字符串是**Unicode字符串**。
-  L"我的字符串"表示将ANSI字符串转换成unicode的字符串，即**每个字符占用两个字节**。
+​	虚幻引擎支持三种核心类型的字符串：
 
-  ```c++
-  strlen("asd") = 3;
-  strlen(L"asd") = 6;
-  ```
-
-- UE的TEXT宏
-  TEXT("my str")将括号内的字符串转换为特定的字符集，默认实现为：
-
-  ```c++
-  #define WIDETEXT_PASTE(x)  L ## x
-  //省略了中间的转换
-  // ##表示连接, 即在字符串前添加L前缀
-  ```
-
-- FString：UE封装的动态字符串。
+- FString是典型的"动态字符数组"字符串类型；
+- FName是对全局字符串表中**不可变**且**不区分大小写**的字符串的引用。相较于FString，它的大小更小，更能高效的传递，但更难以操控；
+- FText是指定用于处理本地化的更可靠的字符串表示。
 
 ## 5 硬引用和软引用(资产加载)
 
@@ -928,6 +1039,10 @@ bool IsValid ()
 ​	动态委托本质集成了**UObject的反射系统**，让其可支持序列化存储到本机和蓝图操作。
 
 ​	动态委托概念上与前两类无异，性能和功能弱于前两类。
+
+# UE架构
+
+​	本小节参考自：[虚幻官方：虚幻架构](https://dev.epicgames.com/documentation/zh-cn/unreal-engine/programming-in-the-unreal-engine-architecture?application_version=5.5)。
 
 
 

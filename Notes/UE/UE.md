@@ -588,7 +588,7 @@ typora-root-url: pic
 
 ​	本小节主要参考自：[虚幻引擎反射系统](https://dev.epicgames.com/documentation/zh-cn/unreal-engine/reflection-system-in-unreal-engine?application_version=5.5)。
 
-### 1) 反射系统中的宏
+### 1) 反射系统中的宏和函数
 
 #### 1.1) UCLASS宏
 
@@ -667,6 +667,29 @@ class MYPROJECT_API AMyActor : public AActor
 ​	UPROPERTY的作用流程如下：
 
 UHT扫描代码 -> 发现UPROPERTY -> 生成反射数据 -> 写入执generated.h -> 编译器注册
+
+#### 1.4) ATTRIBUTE_ACCESSORS
+
+​	与 `UPROPERTY()` 配合使用，会生成下述三个方法：
+
+- `Get{PropertyName}()`：获取属性值；
+- `Set{PropertyName}(NewValue)`：设置属性值，可包含验证逻辑；
+- `{PropertyName}Property()`：返回属性的元数据句柄，用于反射操作；
+
+​	其C++原理如下：
+
+```c++
+#define ATTRIBUTE_ACCESSORS(ClassName, PropertyType, PropertyName) \
+PropertyType Get##PropertyName() const; \
+void Set##PropertyName(PropertyType NewValue); \
+static FProperty* PropertyName##Property();
+```
+
+#### 1.5) 默认构造函数
+
+- UE中默认构造函数由引擎的对象管理系统(如 `NewObject`、`SpawnActor`)**隐式触发**；
+- 所有指定了UCLASS宏的类，必须显示指定无参的默认构造函数；
+- 由于是通过反射触发的，必须在默认构造函数中显示初始化成员对象；
 
 ### 2) 反射系统中的模版
 
@@ -1069,6 +1092,3 @@ bool IsValid ()
   RHIThread 作为后端(**backend**)会转换Command List 为指定图形 API 的调用(Graphical Command)，提交到 GPU 执行。
 
   RHI 线程的工作是转换渲染指令到指定图形 API，创建、上传渲染资源到 GPU。
-
-
-

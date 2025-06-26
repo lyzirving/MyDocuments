@@ -220,6 +220,8 @@ typora-root-url: pic
 
 ​	本小节参考自：[虚幻官方：蓝图通信用法](https://dev.epicgames.com/documentation/zh-cn/unreal-engine/blueprint-communication-usage-in-unreal-engine?application_version=5.5)。
 
+​	主要是① 事件分发器；② 蓝图接口；③ 类型转换。
+
 # UE GamePlay
 
 ​	GamePlay框架是虚幻引擎为开发者提供的工具箱：
@@ -1043,6 +1045,30 @@ bool IsValid ()
 # UE架构
 
 ​	本小节参考自：[虚幻官方：虚幻架构](https://dev.epicgames.com/documentation/zh-cn/unreal-engine/programming-in-the-unreal-engine-architecture?application_version=5.5)。
+
+## 1 UE中的主要线程
+
+- 游戏线程(GameThread)
+
+  承载游戏逻辑、运行流程的工作，也是其它线程的数据发起者；
+
+  在FEngineLoop::Tick 函数执行每帧逻辑的更新；
+
+  引擎启动时会把 GameThread 的线程 id 存储到全局变量GGameThreadId 中，稍后会设置到 TaskGraph 系统中。
+
+- 渲染线程(RenderThread)
+
+  RenderThread 在 TaskGraph 系统中有一个任务队列，其他线程（主要是GameThread）通过宏 ENQUEUE_RENDER_COMMAND 向该队列中填充任务；
+
+  RenderThread 不断从这个队列中取出任务来执行，从而生成与**平台无关**的 **Command List**（渲染指令列表）。
+
+- RHI线程(Render Hardware Interface Thread)
+
+  RenderThread 作为前端(**frontend**)产生的 Command List 是平台无关的，是抽象的图形 API 调用；
+
+  RHIThread 作为后端(**backend**)会转换Command List 为指定图形 API 的调用(Graphical Command)，提交到 GPU 执行。
+
+  RHI 线程的工作是转换渲染指令到指定图形 API，创建、上传渲染资源到 GPU。
 
 
 

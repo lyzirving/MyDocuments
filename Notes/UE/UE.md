@@ -1065,6 +1065,80 @@ bool IsValid ()
 
 ​	动态委托概念上与前两类无异，性能和功能弱于前两类。
 
+# UE GAS系统
+
+​	GAS即GamePlay Ability System。
+
+## 1 属性集AttribueSet
+
+​	AttributeSet是**FGameplayAttributes**结构体的集合，它通过**AbilitySystemComponent**注册，设置为Actor的**子对象**。
+
+### 1) 架构和使用
+
+<img src="/UE_AttributeSet.png" alt="UE_AttributeSet" style="zoom:80%;" />
+
+​	下述是AttrbuteSet实现示例：
+
+```c++
+UCLASS()
+class UHealthSet : public UAttributeSetBase 
+{
+	GENERATED_BODY()
+public:
+	UHealthSet();
+
+	//最大生命值
+	UPROPERTY(BlueprintReadOnly)
+	FGameplayAttributeData MaxHealth;
+	ATTRIBUTE_ACCESSORS(UHealthSet, MaxHealth);
+	//生命恢复速度
+	UPROPERTY(BlueprintReadOnly)
+	FGameplayAttributeData HealthRegenRate;
+	ATTRIBUTE_ACCESSORS(UHealthSet, HealthRegenRate);
+};
+```
+
+​	下述的Character，向AbilityComponentSystem中注册了AttributeSet：
+
+```c++
+#include "RLCharacterBase.h"
+#include "AbilitySystemComponent.h"
+
+// Sets default values
+ARLCharacterBase::ARLCharacterBase() {
+    PrimaryActorTick.bCanEverTick = true;
+	if (bUseGAS) 
+    {
+		//创建ASC组件
+		AbilitySystemComponent = 
+            CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	}
+}
+
+UAbilitySystemComponent* ARLCharacterBase::GetAbilitySystemComponent() const {
+	return AbilitySystemComponent;
+}
+
+void ARLCharacterBase::BeginPlay() 
+{
+	if (bUseGAS) 
+    {
+		for (auto Element : AttributeSetClasses) 
+        {
+			UAttributeSet* AttributeSet = NewObject<UAttributeSet>(this, Element);
+			AbilitySystemComponent->AddSpawnedAttribute(AttributeSet);
+		}
+	}
+	Super::BeginPlay();
+}
+```
+
+### 2) GameEffect
+
+​	自定义GameEffect，制定规则，用于修改AbilitySystemComponent中某个属性集的特定属性。
+
+<img src="/UE_GameEffect.png" alt="UE_GameEffect" style="zoom:90%;" />
+
 # UE架构
 
 ​	本小节参考自：[虚幻官方：虚幻架构](https://dev.epicgames.com/documentation/zh-cn/unreal-engine/programming-in-the-unreal-engine-architecture?application_version=5.5)。

@@ -978,6 +978,64 @@ cout<<sizeof(s1)<<endl; // 24
 cout<<sizeof(s2)<<endl; // 16
 ```
 
+## 5 多态和内存对齐
+
+```c++
+class Base {
+    public:
+    	int a = 1;
+    	virtual void print(int n = 2) {
+            std::cout << "Base: " << a + n << std::endl;
+        }
+}
+
+class Derived : public Base {
+    public:
+    	int b = 3;
+    	virtual void print(int n = 10) override {
+            std::cout << "Derived: " << b + n << std::endl;
+        }
+}
+
+int main() {
+    Base* ptr = new Derived();
+    ptr->print(); //(1)
+    delete ptr;
+    
+    Base* arr = new Derive[10];
+    arr[7].print();//(2)
+    delete][] arr;
+}
+```
+
+- 解析(1)
+
+  典型的**多态**应用，输出结果为`"Derived:  5"`。需要注意的是，默认参数是**静态绑定**的，即编译期时确定n为2。 
+
+- 解析(2)
+
+  ```c++
+  arr[7] <=> *(arr + 7 * sizeof(Base));
+  ```
+
+  即先对首地址arr进行7倍Base大小的偏移，然后对偏移位置解引用。
+
+  ```c++
+  int sizeA = sizeof(Base); 
+  // sizeA = 16 = 8 + 4 + 4
+  //8是虚函数指针, 4是成员a的大小, 4是内存对齐(对齐至8)填充的字节
+  
+  int sizeB = sizeof(Derived);
+  // sizeB = 8 + 4 + 4;
+  //8是虚函数指针, 4是成员a的大小, 4是成员b的大小, 刚好对齐至8字节(gcc平台下, 父类Base不含填充值)
+  ```
+
+  由于Base和Derived的大小都是16，因此此时arr[7].print()实际调用的是Derived的print()，输出为`Derived: 5`。
+
+- 其他情况
+
+  在其他平台下(非gcc)，上述Derived和Base的大小可能不同，因此会出现未定义行为，导致程序崩溃。
+
 # 基础语法&&特性
 
 ## 1 extern "C"

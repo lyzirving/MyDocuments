@@ -978,7 +978,9 @@ cout<<sizeof(s1)<<endl; // 24
 cout<<sizeof(s2)<<endl; // 16
 ```
 
-## 5 多态和内存对齐
+# 多态和内存分布
+
+## 1 多态和内存对齐
 
 ```c++
 class Base {
@@ -1030,11 +1032,101 @@ int main() {
   //8是虚函数指针, 4是成员a的大小, 4是成员b的大小, 刚好对齐至8字节(gcc平台下, 父类Base不含填充值)
   ```
 
-  由于Base和Derived的大小都是16，因此此时arr[7].print()实际调用的是Derived的print()，输出为`Derived: 5`。
+  由于Base和Derived的大小都是16，因此此时`arr[7].print()`实际调用的是Derived的print()，输出为`Derived: 5`。
 
 - 其他情况
 
   在其他平台下(非gcc)，上述Derived和Base的大小可能不同，因此会出现未定义行为，导致程序崩溃。
+
+## 2 多态和内存布局
+
+- A和B类大小相同，且没有继承的情况下
+
+  ```c++
+  class A {
+  public:
+      void f1() {
+          printf("A::f1\n");
+      }
+      virtual void f2() {
+          printf("A::f2\n");
+      }
+  };
+  
+  class B {
+  public:
+      virtual void f1() {
+          printf("B::f1\n");
+      }
+      virtual void f2() {
+          printf("B::f2\n");
+      }
+  }
+  
+  int main() {
+      B b;
+      A* p = (A*)&b;
+      p->f1();
+      p->f2();
+  }
+  ```
+
+  | 类B内存布局     | 类B虚函数表结构     |
+  | :-------------- | ------------------- |
+  | vptr            | [0] -> B::f1        |
+  |                 | [1] -> B::f2        |
+  |                 |                     |
+  | **类A内存布局** | **类A虚函数表结构** |
+  | vptr            | [0] -> A::f2        |
+
+  `A* p = (A*)&b`实际执行了reinterpret_cast，对内存进行重解释，且A和B的类内存分布相同。
+
+  `p->f1`()输出为`A::f1`，在编译期确定。
+
+  `p->f2()`，在编译期确定虚函数表**索引为0**，在运行期将索引0放入虚函数表，得到B::f1，因此`p->f2()`输出为`B::f1`。
+
+- A和B类大小相同，存在继承的情况
+
+  ```c++
+  class A {
+  public:
+      void f1() {
+          printf("A::f1\n");
+      }
+      virtual void f2() {
+          printf("A::f2\n");
+      }
+  };
+  
+  class B : public A {
+  public:
+      virtual void f1() {
+          printf("B::f1\n");
+      }
+      virtual void f2() {
+          printf("B::f2\n");
+      }
+  }
+  
+  int main() {
+      B b;
+      A* p = (A*)&b;
+      p->f1();
+      p->f2();
+  }
+  ```
+
+  | 类B内存布局     | 类B虚函数表结构     |
+  | :-------------- | ------------------- |
+  | vptr            | [0] -> B::f2        |
+  |                 | [1] -> B::f1        |
+  |                 |                     |
+  | **类A内存布局** | **类A虚函数表结构** |
+  | vptr            | [0] -> A::f2        |
+
+  B的虚函数表分布发生了变化，因为B继承自A，因此虚函数表以A的虚函数表开始，进行覆盖和追加。
+
+  因此，这里打印依次是`A::f1`和`B::f2`。
 
 # 基础语法&&特性
 

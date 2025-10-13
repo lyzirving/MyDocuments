@@ -322,7 +322,31 @@ typora-root-url: pic
 
 # UE动画系统
 
-## 1 创建动画蓝图角色
+## 1 动画基础
+
+### 1) 骨骼动画基础
+
+#### 1.1) UE骨骼动画相关的坐标空间
+
+- **BoneSpace**：当前骨骼相对于父骨骼坐标空间的Transform信息，UE里边也叫LocalSpace。
+- **ComponentSpace**：当前骨骼相对于Root骨骼坐标空间的Transform信息。注意：一般美术只有local空间和世界空间的概念，他们的local一般指bonespace，他们的世界空间一般指componentspace。
+- **WorldSpace:**程序里真正的世界空间。
+
+在骨骼动画帧里，每帧骨骼动画包含了所有骨骼的Bonespace Transform。比如一个150根骨骼的3秒的动画数据包含：150根骨骼 x 3秒 x 30帧  x 3Vector=40500个Vector信息。
+
+部分特殊的功能计算可能用BoneSpace无法推演出来，需在ComponentSpace下计算，比如[IK计算](https://zhida.zhihu.com/search?content_id=191007120&content_type=Article&match_order=1&q=IK计算&zhida_source=entity)。
+
+#### 1.2) 蒙皮
+
+蒙皮即是人的皮肤，由**骨骼进行驱动**：骨骼的位置随时间变化，顶点的位置随骨骼变化。
+
+顶点的Skininfo包含影响该顶点的骨骼数目，指向这些骨骼的指针，这些骨骼作用于该顶点的权重。
+
+每个顶点可以被多个骨骼权重控制，每根骨骼也可以影响多个顶点。
+
+## 2 动画蓝图
+
+### 1) 使用动画蓝图
 
 - 使用蓝图类Character作为基类，创建角色蓝图基类BP_CharacterBase。
 
@@ -345,7 +369,67 @@ typora-root-url: pic
 
   ![UE_UseAnimationBP](/UE_UseAnimationBP.png)
 
-## 2 动画优化
+### 2) 线程交互的双缓冲模型
+
+双缓冲模型是一种多线程数据同步技术，它通过空间换时间策略，有效解决了游戏线程与渲染线程之间的数据竞争问题，保障了游戏的高性能和流畅体验。
+
+双缓冲模型的核心在于**为共享数据维护两个缓冲区**：一个专供逻辑线程（生产者）写入新数据（写缓冲区），另一个专供渲染线程（消费者）读取数据（读缓冲区）。
+
+#### 2.1) 交互流程
+
+1.**游戏线程更新**：将需要传递给渲染线程的数据写入到**写缓冲区**。
+
+2.**缓冲交换**：当逻辑线程完成一帧所有数据的更新后，会触发**缓冲交换**（Swap）操作。这个操作通常通过原子性地交换前、后台缓冲区的指针来实现，耗时极短。
+
+3.**渲染线程读取**：渲染线程在绘制当前帧时，始终从交换后的**读缓冲区/后台缓冲区**中安全地获取数据。由于读写操作完全分离，期间不存在竞争条件。
+
+若渲染线程处理过慢，导致游戏线程准备提交新帧时，渲染线程还在处理更早的帧数据。UE也对这种情况进行了处理：在UE4的帧同步对象`FFrameEndSync`中，通过`FRenderCommandFence`(渲染命令栅栏)来实现同步控制：游戏线程就会被**阻塞**，直到渲染线程赶上进度。
+
+```c++
+// 简化的同步逻辑概念
+void Sync(bool bAllowOneFrameThreadLag) {
+    // 游戏线程在此设置一个栅栏，表示当前帧的渲染任务已提交
+    Fence[CurrentIndex].BeginFence(true);    
+    // 如果允许一帧延迟，游戏线程不会在此等待，直接继续下一帧
+    if (bAllowOneFrameThreadLag) {
+        // 交换索引，为下一帧的同步做准备
+        CurrentIndex = (CurrentIndex + 1) % 2; 
+    } else {
+        // 如果不允许延迟，游戏线程会等待，直到栅栏完成（即渲染线程处理完当前提交）
+        Fence[CurrentIndex].Wait(true); 
+    }
+}
+```
+
+这种机制确保了线程间的步调一致。
+
+#### 2.2) 三缓冲
+
+当游戏线程和渲染线程的处理速度不稳定，或希望进一步减少线程因相互等待而发生的阻塞时，**三缓冲**（Triple Buffering）便是一种改进方案。
+
+三缓冲通过引入第三个缓冲区，提供了一个“预备缓冲区”。
+
+即使渲染线程尚未完成前一帧的 处理，游戏线程无法交换前/后台缓冲区。此时若游戏线程准备好新数据后，可以立即写入后台的预备缓冲区，不必等待交换时机。
+
+这是以**增加少量内存开销**为代价，降低了游戏线程和渲染线程**相互阻塞的概率**，有助于提高帧率的稳定性和整体吞吐量。
+
+### 3) 动画蓝图原理
+
+- 动画实例
+
+  动画的播放依赖于**SkeltalMeshCompoonent**组件，每个SkeltalMeshCompoonent组件会创建一个动画实例**UAnimationInstance**，通过该动画实例来控制和播放动画。
+
+  该实例一般主要在**游戏线程**执行，很多动画控制逻辑都可放到该动画实例内。
+
+  游戏一般会新建一个实例类继承自UAnimationInstance。
+
+- 动画代理
+
+  动画实例UAnimationInstance通过动画代理**FAnimInstanceProxy**和**动画线程**进行交互。
+
+  这里简单插入介绍一下**线程交互**的**双缓冲模型**：UE里游戏线程和其他线程进行数据交互的时大多数都通过Proxy作为代理进行交互。一般有2份数据结构，每帧更新数据时Swap交换一下最新的数据。
+
+## 3 动画优化
 
 ### 1) 优化角色旋转
 
@@ -363,7 +447,7 @@ typora-root-url: pic
 
   <img src="/UE_UseControllerRotation.png" alt="UE_UseControllerRotation" style="zoom:80%;" />
 
-## 3 动画重定向
+## 4 动画重定向
 
 ### 1) 原理
 
@@ -435,13 +519,13 @@ typora-root-url: pic
 
 <img src="/UE_ExportAutoRetargetAnim.png" alt="UE_ExportAutoRetargetAnim" style="zoom:50%;" />
 
-## 4 动画混合
+## 5 动画混合
 
 ​	下图描述了在动画蓝图中，如何混合上半身动画和下半身动画：
 
 <img src="/UE_BlendAnimation.png" alt="UE_BlendAnimation" style="zoom:60%;" />
 
-## 5 Root Motion
+## 6 Root Motion
 
 ​	Root Motion：动画控制**角色本身**运动的一种**动画机制**。
 
@@ -509,7 +593,7 @@ typora-root-url: pic
 - 解决方案：通常，动画**根节点**负责角色在**水平方向**上的移动，让脊椎末端节点跟随根节点上下移动(此时根节点的上下移动由**重力**控制)。
 - 总结：动画根节点不要有Z方向的位移。
 
-## 6 动画蒙太奇
+## 7 动画蒙太奇
 
 # UE物理系统
 

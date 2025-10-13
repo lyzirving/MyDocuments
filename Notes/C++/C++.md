@@ -3017,7 +3017,7 @@ printf ("\tstr3 的地址: %x\n", (unsigned int)str3.c_str() );
 
 ​	该例子中，输出的三个地址是一致的，即三个string对象内部的char*指向同一块地址。
 
-![string_share_mem](D:\Code\0_MyCode\MyDocuments\Notes\C++\pic\string_share_mem.png)
+<img src=".\pic\string_share_mem.png" alt="c++_deque" style="zoom:65%;" />
 
 - 写时拷贝
 

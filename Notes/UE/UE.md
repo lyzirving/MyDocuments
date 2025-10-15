@@ -344,31 +344,6 @@ typora-root-url: pic
 
 每个顶点可以被多个骨骼权重控制，每根骨骼也可以影响多个顶点。
 
-## 2 动画蓝图
-
-### 1) 使用动画蓝图
-
-- 使用蓝图类Character作为基类，创建角色蓝图基类BP_CharacterBase。
-
-  再以BP_CharacterBase为基类，创建角色子类，如BP_Ninja：
-  <img src="/UE_BP_Character.png" alt="BP_Character" style="zoom:80%;" />
-
-- 打开角色蓝图，更新网格体；根据胶囊体更细网格位置和胶囊体大小；根据前进方向调整网格朝向。
-
-- 创建混合空间，设置动画混合。
-
-- 创建动画蓝图，将上一步创建的混合空间，设置给蓝图，作为动画输出：
-
-  <img src="/UE_ABP_Character_AnimFlow.png" alt="ABP_Character_AnimFlow" style="zoom:80%;" />
-
-- 在动画蓝图的EventGraph中，设置驱动动画蓝图的逻辑：
-
-  <img src="/UE_ABP_EventGraph.png" alt="ABP_EventGraph" style="zoom:90%;" />
-
-- 在角色蓝图中，将角色的动画模式设置为：使用蓝图，并设置刚创建的动画蓝图。
-
-  ![UE_UseAnimationBP](/UE_UseAnimationBP.png)
-
 ### 2) 线程交互的双缓冲模型
 
 双缓冲模型是一种多线程数据同步技术，它通过空间换时间策略，有效解决了游戏线程与渲染线程之间的数据竞争问题，保障了游戏的高性能和流畅体验。
@@ -413,7 +388,331 @@ void Sync(bool bAllowOneFrameThreadLag) {
 
 这是以**增加少量内存开销**为代价，降低了游戏线程和渲染线程**相互阻塞的概率**，有助于提高帧率的稳定性和整体吞吐量。
 
-### 3) 动画蓝图原理
+## 2 UE5动画源码浅析
+
+动画系统的最主要的四个类：
+
+- class: USkeletalMeshComponent
+- class: UAnimInstance
+- struct: FAnimInstanceProxy
+- struct: FAnimNode_Base
+
+**UAnimInstance**是Animation Blueprint的C++版本，动画蓝图的父类。通常我们会继承UAnimInstance，生成自己的C++动画类或蓝图类，由该类创建动画[状态机](https://so.csdn.net/so/search?q=状态机&spm=1001.2101.3001.7020)和各种动画节点，通过这些值控制动画状态机流转，控制动画权重等。
+
+**USkeletalMeshComponent**是一个组件，用来创建USkeletalMesh的实例，里面会存UAnimInstance的引用，可以播放动画。UE想把GamePlay和Animation系统解耦，USkeletalMeshComponent负责GamePlay，而AnimInstance负责动画。
+
+### 1) 动画更新主流程
+
+动画更新主流程入口是SkeletalMeshComponent::TickComponent：
+
+```c++
+void USkeletalMeshComponent::TickComponent(...)
+{
+    ........
+    // 主要是SkinnedMeshComponent主导相关流程
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);        
+    ........
+}
+```
+
+SkinnedMeshComponent，主导了Tick流程，流程中大部分方法都是虚函数，能被子类覆写。
+
+流程中有两个主要的函数：
+
+- **TickPose**主要执行动画逻辑更新。
+- **RefreshBoneTransforms**主要执行骨骼矩阵的计算。
+
+```c++
+void USkinnedMeshComponent::TickComponent(...)
+{
+    // Tick ActorComponent first.
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+    
+    // See if this mesh was rendered recently. This has to happen first because
+    // other data will rely on this
+	bRecentlyRendered = (GetLastRenderTime() > GetWorld()->TimeSeconds - 1.0f);
+    
+    // Update component's LOD settings
+    // This must be done BEFORE animation Update and Evaluate (TickPose and 
+    // RefreshBoneTransforms respectively)
+	const bool bLODHasChanged = UpdateLODStatus();
+    
+    // Tick Pose first
+	if (ShouldTickPose())
+	{       
+		TickPose(DeltaTime, false);
+	}
+    
+    // If we have been recently rendered, and bForceRefPose has been on for at 
+    // least a frame, or the LOD changed, update bone matrices.
+	if( ShouldUpdateTransform(bLODHasChanged) )
+	{
+		// Do not update bones if we are taking bone transforms from another SkelMeshComp
+		if( LeaderPoseComponent.IsValid() )
+		{
+			UpdateFollowerComponent();
+		}
+		else 
+		{
+            // 更新骨骼矩阵
+			RefreshBoneTransforms(ThisTickFunction);
+		}
+	}
+    else if(VisibilityBasedAnimTickOption == 
+            		EVisibilityBasedAnimTickOption::AlwaysTickPose)
+	{
+		// We are not refreshing bone transforms, but we do want to tick pose. We 
+        // may need to kick off a parallel task
+		DispatchParallelTickPose(ThisTickFunction);
+	}
+}
+```
+
+### 2) TickPose
+
+```c++
+SkeletalMeshComponent::TickPose
+--SkeletalMeshComponent::TickAnimation
+----SkeletalMeshComponent::RecalcRequiredCurves
+----SkeletalMeshComponent::TickAnimInstances
+```
+
+#### 2.1) TickAnimInstances
+
+TickAnimInstances会处理所有AnimInstances：所有的`LinkedInstances`、`AnimScriptInstance`和`PostProcessAnimInstance`。
+
+```c++
+void USkeletalMeshComponent::TickAnimInstances(float DeltaTime, 
+                                               bool bNeedsValidRootMotion)
+{
+	// Allow animation instance to do some processing before the linked instances update
+	if (AnimScriptInstance != nullptr)
+        AnimScriptInstance->PreUpdateLinkedInstances(DeltaTime);
+
+	// We update linked instances first incase we're using either root motion or non-threaded update.
+	// This ensures that we go through the pre update process and initialize the proxies correctly.
+	for (UAnimInstance* LinkedInstance : LinkedInstances)
+	{
+		// Sub anim instances are always forced to do a parallel update 
+		LinkedInstance->UpdateAnimation(DeltaTime * GlobalAnimRateScale,
+                     false, UAnimInstance::EUpdateAnimationFlag::ForceParallelUpdate);        }
+
+	if (AnimScriptInstance != nullptr)
+	{
+		// Tick the animation
+		AnimScriptInstance->UpdateAnimation(DeltaTime * GlobalAnimRateScale, 
+                                            bNeedsValidRootMotion);
+	}
+
+	if(ShouldUpdatePostProcessInstance())
+	{
+		PostProcessAnimInstance->UpdateAnimation(DeltaTime * GlobalAnimRateScale, false);
+	}
+}
+```
+
+- `LinkedAnimInstances`
+
+  维护了一个数组，通过LinkAnimGraph节点动态链接的动画蓝图，可作为独立的动画功能模块，根据需要使用，可动态插拔。
+
+- `AnimScriptInstance`
+
+  常规的动画蓝图，每个SkeletalMeshComponent都只有一个动画蓝图。
+
+- `PostProcessAnimInstance`
+  特殊的后处理Instance，一般用于IK、物理模拟动画节点、表情动画及其他的动画节点计算任务。
+
+  在`PostProcessAnimInstance`中，首先接收来自`AnimScriptInstance`中的pose，在此基础上进行计算出新的OutputPose。
+
+#### 2.2) AnimInstance::UpdateAnimation
+
+```c++
+UAnimInstance::UpdateAnimation(...)
+{
+    // step 1. 获取proxy, 如果当前正在执行并行任务, 会等待并行任务完成
+    FAnimInstanceProxy& Proxy = GetProxyOnGameThread<FAnimInstanceProxy>();
+    // .......
+    // step 2
+    PreUpdateAnimation(DeltaSeconds);
+    
+    // step 3. 蒙太奇需要优先update, 以便知道蒙太奇当前位置
+	{
+		UpdateMontage(DeltaSeconds);
+
+		// now we know all montage has advanced
+		// time to test sync groups
+		UpdateMontageSyncGroup();
+
+		// Update montage eval data, to be used by AnimGraph Update and Evaluate phases.
+		UpdateMontageEvaluationData();
+	}
+    // .......
+    NativeUpdateAnimation(DeltaSeconds);
+    BlueprintUpdateAnimation(DeltaSeconds);
+    // .......
+    
+    // step 4. 根据当前状态, 决定是否需要在Game Thread执行ParallelUpdateAnimation()
+	const bool bWantsImmediateUpdate = NeedsImmediateUpdate(DeltaSeconds, 
+                                                            bNeedsValidRootMotion);
+	bool bShouldImmediateUpdate = bWantsImmediateUpdate;
+    switch (UpdateFlag)
+	{
+        // 如果开启了强制并行优化, bShouldImmediateUpdate设置为false
+		case EUpdateAnimationFlag::ForceParallelUpdate:
+		{
+			bShouldImmediateUpdate = false;
+			break;
+		}
+	} 
+    
+    // step 5. true表示不需要并行处理, 直接在GameThread中更新
+    if(bShouldImmediateUpdate)
+	{
+		ParallelUpdateAnimation();
+		PostUpdateAnimation();
+	}
+}
+```
+
+### 3) 更新骨骼矩阵
+
+RefreshBoneTransforms是虚函数，我们直接看SkeletalMeshComponent::RefreshBoneTransforms：
+
+```c++
+void USkeletalMeshComponent::RefreshBoneTransforms(TickFunction)
+{
+    //Only want to call this from the game thread as we set up tasks etc
+    check(IsInGameThread()); 
+    // ........
+    
+    // 确定一系列状态变量
+    const bool bDoParallelEvaluation = bHasValidInstanceForParallelWork && bDoPAE 
+        && (bShouldDoEvaluation || bShouldDoParallelInterpolation) 
+        && TickFunction && TickFunction->IsCompletionHandleValid();
+    // ........
+        
+    // 设置并行任务的上下文: AnimEvaluationContext
+    AnimEvaluationContext.SkeletalMesh = GetSkeletalMeshAsset();
+    // 设置上下文的其他操作
+    // ........
+        
+    if (bDoParallelEvaluation)
+	{
+        // 分发Evaluation的并行任务
+        DispatchParallelEvaluationTasks(TickFunction);
+    }
+    else
+	{
+        // 在GameThread上做Evaluation
+        // ........
+    }
+}
+```
+
+#### 3.1) 分发并行Eval任务
+
+```c++
+void USkeletalMeshComponent::DispatchParallelEvaluationTasks(TickFunction)
+{
+    // 多线程交互的双缓冲模型
+    SwapEvaluationContextBuffers();
+    
+    // start parallel work
+    check(!IsValidRef(ParallelAnimationEvaluationTask));
+    // 构建Task
+    ParallelAnimationEvaluationTask = 
+        TGraphTask<FParallelAnimationEvaluationTask>::CreateTask()
+        .ConstructAndDispatchWhenReady(this);
+    
+    // 在GameThread上构建监听, 当EvalTask结束后, 接收结果
+	FGraphEventArray Prerequistes;
+	Prerequistes.Add(ParallelAnimationEvaluationTask);
+	FGraphEventRef TickCompletionEvent = 	
+     	TGraphTask<FParallelAnimationCompletionTask>::CreateTask(&Prerequistes)
+         	.ConstructAndDispatchWhenReady(this);
+
+	if ( TickFunction )
+	{
+		TickFunction->GetCompletionHandle()->DontCompleteUntil(TickCompletionEvent);
+	}
+}
+```
+
+FParallelAnimationCompletionTask中，主要调用SkeletalMeshComponent::**ParallelAnimationEvaluation**：
+
+```c++
+void USkeletalMeshComponent::ParallelAnimationEvaluation() 
+{
+    // 省略了if条件
+	PerformAnimationProcessing(...)
+
+	ParallelDuplicateAndInterpolate(AnimEvaluationContext);
+
+	// ........
+}
+```
+
+PeformAnimationProcessing如下：
+
+```c++
+void USkeletalMeshComponent::PerformAnimationProcessing(..., bool bInDoEvaluation, ...)
+{
+    // update anim instance
+	if(InAnimInstance && InAnimInstance->NeedsUpdate())
+        InAnimInstance->ParallelUpdateAnimation();
+    
+    // If we don't have an anim instance, we may still have a post physics instance
+    if(ShouldPostUpdatePostProcessInstance())
+        PostProcessAnimInstance->ParallelUpdateAnimation();
+    
+    if(bInDoEvaluation && OutSpaceBases.Num() > 0)
+	{
+        FCompactPose EvaluatedPose;
+        UE::Anim::FHeapAttributeContainer Attributes;		
+        
+        // evaluate pure animations, and fill up BoneSpaceTransforms
+        EvaluateAnimation(InSkeletalMesh, InAnimInstance, OutRootBoneTranslation, 
+                          OutCurve, EvaluatedPose, Attributes);
+        
+        // ........
+        
+        // Fill SpaceBases from LocalAtoms
+        InSkeletalMesh->FillComponentSpaceTransforms(
+            OutBoneSpaceTransforms,
+            FillComponentSpaceTransformsRequiredBones, 
+            OutSpaceBases);
+    }
+}
+```
+
+可以看到**EvaluateAnimation**会填充骨骼矩阵。
+
+## 3 动画蓝图
+
+### 1) 使用动画蓝图
+
+- 使用蓝图类Character作为基类，创建角色蓝图基类BP_CharacterBase。
+
+  再以BP_CharacterBase为基类，创建角色子类，如BP_Ninja：
+  <img src="/UE_BP_Character.png" alt="BP_Character" style="zoom:80%;" />
+
+- 打开角色蓝图，更新网格体；根据胶囊体更细网格位置和胶囊体大小；根据前进方向调整网格朝向。
+
+- 创建混合空间，设置动画混合。
+
+- 创建动画蓝图，将上一步创建的混合空间，设置给蓝图，作为动画输出：
+
+  <img src="/UE_ABP_Character_AnimFlow.png" alt="ABP_Character_AnimFlow" style="zoom:80%;" />
+
+- 在动画蓝图的EventGraph中，设置驱动动画蓝图的逻辑：
+
+  <img src="/UE_ABP_EventGraph.png" alt="ABP_EventGraph" style="zoom:90%;" />
+
+- 在角色蓝图中，将角色的动画模式设置为：使用蓝图，并设置刚创建的动画蓝图。
+
+  ![UE_UseAnimationBP](/UE_UseAnimationBP.png)
+
+### 2) 动画蓝图原理
 
 - 动画实例
 
@@ -429,7 +728,7 @@ void Sync(bool bAllowOneFrameThreadLag) {
 
   这里简单插入介绍一下**线程交互**的**双缓冲模型**：UE里游戏线程和其他线程进行数据交互的时大多数都通过Proxy作为代理进行交互。一般有2份数据结构，每帧更新数据时Swap交换一下最新的数据。
 
-## 3 动画优化
+## 4 动画优化
 
 ### 1) 优化角色旋转
 
@@ -447,7 +746,7 @@ void Sync(bool bAllowOneFrameThreadLag) {
 
   <img src="/UE_UseControllerRotation.png" alt="UE_UseControllerRotation" style="zoom:80%;" />
 
-## 4 动画重定向
+## 5 动画重定向
 
 ### 1) 原理
 
@@ -519,13 +818,13 @@ void Sync(bool bAllowOneFrameThreadLag) {
 
 <img src="/UE_ExportAutoRetargetAnim.png" alt="UE_ExportAutoRetargetAnim" style="zoom:50%;" />
 
-## 5 动画混合
+## 6 动画混合
 
 ​	下图描述了在动画蓝图中，如何混合上半身动画和下半身动画：
 
 <img src="/UE_BlendAnimation.png" alt="UE_BlendAnimation" style="zoom:60%;" />
 
-## 6 Root Motion
+## 7 Root Motion
 
 ​	Root Motion：动画控制**角色本身**运动的一种**动画机制**。
 
@@ -593,7 +892,7 @@ void Sync(bool bAllowOneFrameThreadLag) {
 - 解决方案：通常，动画**根节点**负责角色在**水平方向**上的移动，让脊椎末端节点跟随根节点上下移动(此时根节点的上下移动由**重力**控制)。
 - 总结：动画根节点不要有Z方向的位移。
 
-## 7 动画蒙太奇
+## 8 动画蒙太奇
 
 # UE物理系统
 

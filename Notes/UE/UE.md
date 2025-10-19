@@ -320,6 +320,103 @@ typora-root-url: pic
 
 ​	组件之间是有**父子关系**的。当你调整父组件的属性时，子组件也会跟随变化。
 
+# UE多线程架构
+
+## 1 系统线程和线程管理
+
+- **FRunnableThread**：封装了不同平台下的创建系统线程, 设置线程名, 设置线程优先级等功能, 代表一条系统线程。不承载任何业务逻辑。
+- **FRunnableThread::Create**：常用的Static方法, 用来创建一条系统线程并返回对应的FRunnableThread, 创建时必须传入一个FRunnable指针。
+- **FRunnable**: 一个纯虚类, 需要继承它并override `Run`方法。在`FRunnable`的任务执行完成后，`FRunnableThread`所对应的系统线程就会被释放, `FRunnableThread`通常也会被管理者手动销毁。
+- **FThreadManager**：通过字典记录了所有线程的线程id和`FRunnableThread`的对应关系。
+
+<img src="/pic_runnable_thread.png" alt="pic_runnable_thread" style="zoom:30%;" />
+
+## 2 线程池
+
+[线程池](https://zhida.zhihu.com/search?content_id=262368688&content_type=Article&match_order=1&q=线程池&zhida_source=entity)的出现是为了避免频繁创建线程, 毕竟创建线程需要调用系统接口并占用额外资源。
+
+- `FQueuedThreadPool`"：纯虚类，是所有类型的线程池的父类。
+
+- `FQueuedThreadPoolBase`：绝大多数情况下, 我们都使用它。
+
+  ```c++
+  FQueuedThreadPool* FQueuedThreadPool::Allocate()
+  {
+  	return new FQueuedThreadPoolBase;
+  }
+  ```
+
+### 1) 工作线程FQueueThread
+
+`Base`线程池是通过创建`FQueuedThread`来间接创建`FRunnableThread`的。
+
+```c++
+// Engine\Source\Runtime\Core\Private\HAL\ThreadingBase.cpp
+// FQueuedThreadPoolBase::CreateInternal的实现: 创建多个FQueuedThread
+virtual bool CreateInternal(uint32 InNumQueuedThreads, ...) override
+{
+    for (uint32 Count = 0; Count < InNumQueuedThreads; Count++)
+    {
+        FQueuedThread* pThread = new FQueuedThread();
+        const FString ThreadName = FString::Printf(TEXT("%s #%d"), Name, Count);
+        // 通过pThread->Create创建系统线程
+        if (pThread->Create(this, StackSize, ThreadPriority, *ThreadName) == true)
+        {
+            QueuedThreads.Add(pThread);  // 加入空闲线程队列
+            AllThreads.Add(pThread);  // 加入所有线程队列
+        }
+    }
+}
+```
+
+在`FQueuedThread::Create`中：
+
+```c++
+// FQueuedThread::Create的实现: 直接创建一个FRunnableThread
+virtual bool Create(...)
+{
+    // 记录所属线程池, 初始化SynchEvent
+    // ...
+    // 创建FRunnableThread
+	Thread = FRunnableThread::Create(this, *PoolThreadName, InStackSize, ThreadPriority,
+                                     FPlatformAffinity::GetPoolThreadMask());
+	check(Thread);
+	return true;
+}
+```
+
+`FQueuedThread`在内部会创建并持有一个`FRunnableThread`，且自身也继承了`FRunnable`类。
+
+UE在实践中通常会采取这样的方法将**两个类的功能集中到一个新的类**中来简化逻辑。
+
+<img src="/pic_queuethread.png" alt="pic_queuethread" style="zoom:30%;" />
+
+QueueThread的工作流大致如下：
+
+<img src="/pic_queuethread_workflow.png" alt="pic_queuethread_workflow" style="zoom:100%;" />
+
+### 2) 任务封装: IQueuedWork
+
+上层应用需要的时候通过线程池的`AddQueuedWork`方法来新增并分配任务。`AddQueuedWork`接受`IQueuedWork*`类型的任务作为参数，同时还有一个`EQueuedWorkPriority`参数可以指定优先级。
+
+<img src="/pic_iqueuework.png" alt="pic_iqueuework" style="zoom:30%;" />
+
+添加work的工作流大致如下：
+
+<img src="/pc_addqueuework.png" alt="pc_addqueuework" style="zoom:80%;" />
+
+### 3) 任务的进一步封装: FAsyncTask
+
+Epic为了方便统一加调试信息或者把控任务进度, 于是就封装了更多功能到`FAsyncTask`这个类里。
+
+后面又进一步创建了一个更简单的类`FAutoDeleteAsyncTask`，在更简单的情况下使用。
+
+<img src="/pic_asynctask.png" alt="pic_asynctask" style="zoom:50%;" />
+
+`FAsyncTask`并没有额外提供什么很特别的功能, 只是在`IQueueWork`的基础上增加了一些流程上的控制方法, 变得更加灵活。
+
+Epic还实现了`FAutoDeleteAsyncTask`。 `FAutoDeleteAsyncTask`可以被视作一个极简版的`FAsyncTask`, 它在任务结束后会delete this, 所以可以new出来以后就不管。
+
 # UE动画系统
 
 ## 1 动画基础
@@ -390,6 +487,8 @@ void Sync(bool bAllowOneFrameThreadLag) {
 
 ## 2 UE5动画源码浅析
 
+本小节参考自：[UE5动画源码剖析](https://blog.csdn.net/alexhu2010q/article/details/125521629)。
+
 动画系统的最主要的四个类：
 
 - class: USkeletalMeshComponent
@@ -417,10 +516,14 @@ void USkeletalMeshComponent::TickComponent(...)
 
 SkinnedMeshComponent，主导了Tick流程，流程中大部分方法都是虚函数，能被子类覆写。
 
-流程中有两个主要的函数：
+动画更新主要有两个阶段：
 
-- **TickPose**主要执行动画逻辑更新。
-- **RefreshBoneTransforms**主要执行骨骼矩阵的计算。
+- **Tick**阶段
+
+  由TickPose发起。主要工作是更新动画蓝图中的逻辑，例如状态机切换、通知触发、曲线值计算等。它决定动画状态，但不计算最终骨骼位置。
+- **Evaluate**阶段
+
+  由RefreshBoneTransforms发起，主要执行骨骼矩阵的计算。它根据Tick阶段确定的动画状态，实际执行动画蓝图节点图（AnimGraph）的运算，采样动画序列，进行混合，输出每个骨骼的变换数据。
 
 ```c++
 void USkinnedMeshComponent::TickComponent(...)
@@ -458,13 +561,7 @@ void USkinnedMeshComponent::TickComponent(...)
 			RefreshBoneTransforms(ThisTickFunction);
 		}
 	}
-    else if(VisibilityBasedAnimTickOption == 
-            		EVisibilityBasedAnimTickOption::AlwaysTickPose)
-	{
-		// We are not refreshing bone transforms, but we do want to tick pose. We 
-        // may need to kick off a parallel task
-		DispatchParallelTickPose(ThisTickFunction);
-	}
+    // ........
 }
 ```
 
@@ -609,7 +706,7 @@ void USkeletalMeshComponent::RefreshBoneTransforms(TickFunction)
 }
 ```
 
-#### 3.1) 分发并行Eval任务
+#### 3.1) 分发Evaluation任务
 
 ```c++
 void USkeletalMeshComponent::DispatchParallelEvaluationTasks(TickFunction)
@@ -685,7 +782,169 @@ void USkeletalMeshComponent::PerformAnimationProcessing(..., bool bInDoEvaluatio
 }
 ```
 
-可以看到**EvaluateAnimation**会填充骨骼矩阵。
+可以看到**EvaluateAnimation**会填充骨骼矩阵：
+
+```c++
+void USkeletalMeshComponent::EvaluateAnimation(...) const
+{
+	// ........
+	// We can only evaluate animation if RequiredBones is properly setup for 
+    // the right mesh!
+	if( InSkeletalMesh->GetSkeleton() && InAnimInstance &&
+		InAnimInstance->ParallelCanEvaluate(InSkeletalMesh))
+	{
+		FParallelEvaluationData EvaluationData = { OutCurve, OutPose, OutAttributes };
+		InAnimInstance->ParallelEvaluateAnimation(bForceRefpose, 
+                                                  InSkeletalMesh, 
+                                                  EvaluationData);
+	}
+}
+```
+
+最终会调用AnimInstance的ParallelEvaluateAnimation。
+
+ParallelEvaluateAnimation中会调用AnimInstanceProxy::EvaluateAnimation，从而**开始执行动画蓝图**。
+
+#### 3.2) 动画蓝图节点执行
+
+```c++
+void FAnimInstanceProxy::EvaluateAnimation(FPoseContext& Output)
+{
+	EvaluateAnimation_WithRoot(Output, RootNode);
+}
+
+void FAnimInstanceProxy::EvaluateAnimation_WithRoot(FPoseContext& Output, 
+                                                    FAnimNode_Base* InRootNode)
+{
+	if(InRootNode == RootNode)
+	{
+		// Call the correct override point if this is the root node
+		CacheBones();
+	}
+	else
+	{
+		CacheBones_WithRoot(InRootNode);
+	}
+
+	// Evaluate native code if implemented, otherwise evaluate the node graph
+	if (!Evaluate_WithRoot(Output, InRootNode))
+	{
+		EvaluateAnimationNode_WithRoot(Output, InRootNode);
+	}
+}
+```
+
+先调用CacheBones缓存骨骼信息，让节点缓存它们所需的骨骼索引，以加速后续的变换计算。
+
+再调用EvaluateAnimationNode_WithRoot。
+
+```c++
+void FAnimInstanceProxy::EvaluateAnimationNode_WithRoot(FPoseContext& Output, 
+                                                        FAnimNode_Base* InRootNode)
+{
+	if (InRootNode != nullptr)
+	{
+		// ........		
+		InRootNode->Evaluate_AnyThread(Output);
+	}
+}
+```
+
+#### 3.3) Evaluation递归过程解析
+
+本小节参考自：[UE4源码阅读_骨骼模型与动画系统_动画流程](https://blog.csdn.net/alazycat_/article/details/122158070)。
+
+评估过程从动画蓝图的**根节点（RootNode）**，即最终的**输出节点**开始：调用根节点的`Evaluate_AnyThread`方法。
+
+```c++
+// AnimNode_Root.cpp
+void FAnimNode_Root::Evaluate_AnyThread(FPoseContext& Output)
+{
+	Result.Evaluate(Output);
+}
+
+// AnimNodeBase.cpp
+void FPoseLink::Evaluate(FPoseContext& Output)
+{
+    if (LinkedNode != nullptr)
+    {
+        int32 SourceID = Output.GetCurrentNodeId();
+		{
+			Output.SetNodeId(LinkID);
+			TRACE_SCOPED_ANIM_NODE(Output);
+			LinkedNode->Evaluate_AnyThread(Output);
+		}
+    }
+}
+```
+
+Result是`FPoseLink`对象，动画节点之间通过`FPoseLink`连接。
+
+在`AnimNode`的`Evaluate_AnyThread`内部，**通常会调用其输入`FPoseLink`的`Evaluate`**：触发上一个相连节点的`Evaluate_AnyThread`。
+
+上述过程沿着动画图表中的链接关系**不断回溯**，直到到达一个节点（如`Sequence Player`）不再有代表输入的`FPoseLink`，综上便形成了递归链。
+
+#### 3.4) AnimNode_SequencePlayer
+
+```c++
+void FAnimNode_SequencePlayerBase::Evaluate_AnyThread(FPoseContext& Output)
+{
+	UAnimSequenceBase* CurrentSequence = GetSequence();
+	if (CurrentSequence != nullptr && CurrentSequence->GetSkeleton() != nullptr)
+	{
+        // ......
+		FAnimationPoseData AnimationPoseData(Output);
+		CurrentSequence->GetAnimationPose(AnimationPoseData, 
+               FAnimExtractContext(static_cast<double>(InternalTimeAccumulator), 
+               Output.AnimInstanceProxy->ShouldExtractRootMotion(),
+               DeltaTimeRecord, IsLooping()));
+	}
+}
+```
+
+最终会调用到UAnimSequence::GetAnimationPose->UAnimSequence::GetBonePose：
+
+```c++
+void UAnimSequence::GetBonePose(...) const
+{
+    // ........
+    ExtractRootTrackTransform(0.0f, &RequiredBones), bTreatAnimAsAdditive);
+    // .........
+    if (NumTracks != 0)
+    {
+		// Evaluate compressed bone data
+		FAnimSequenceDecompressionContext DecompContext(...);
+        // AnimationDecompression.cpp
+        UE::Anim::Decompression::DecompressPose(OutPose, CompressedData, 
+                                                ExtractionContext, DecompContext, 
+                                                GetRetargetTransforms(), 
+                                                RootMotionReset);
+    }
+    // ........
+    EvaluateCurveData(OutAnimationPoseData.GetCurve(), ExtractionContext.CurrentTime, 
+                      bUseRawDataForPoseExtraction);
+    
+    // Evaluate animation attributes (no compressed format yet)
+	EvaluateAttributes(OutAnimationPoseData, ExtractionContext, false);
+}
+```
+
+### 4) 回传计算结果
+
+通过FParallelAnimationCompletionTask，调用SkeletalMeshComponent如下方法：
+
+```c++
+void USkeletalMeshComponent::CompleteParallelAnimationEvaluation(...)
+{
+	// ........
+	if (bDoPostAnimEvaluation && ...)
+	{
+		SwapEvaluationContextBuffers();
+		PostAnimEvaluation(AnimEvaluationContext);
+	}	
+	AnimEvaluationContext.Clear();
+}
+```
 
 ## 3 动画蓝图
 

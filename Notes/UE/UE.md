@@ -1890,3 +1890,91 @@ void ARLCharacterBase::BeginPlay()
 ​	自定义GameEffect，制定规则，用于修改AbilitySystemComponent中某个属性集的特定属性。
 
 <img src="/UE_GameEffect.png" alt="UE_GameEffect" style="zoom:90%;" />
+
+# UE性能
+
+## 1 卡顿Hitch
+
+本小节参考自：[UFSH 2025卡顿大追猎:排查逐帧瓶颈](https://www.bilibili.com/video/BV1k44mzWEvq?t=1621.2)。
+
+按照What->Why->How的思路进行排查：
+
+- What is slow：See what is causing the slowdown in a profier；
+- Why is slow：Investigate, go by facts. Don't guess.
+- How do we fix it：With all the info, we can now start fixing it.
+
+### 1) 关卡流式加载卡顿Level Streaming Hitch
+
+#### 1.1) 避免为纯静态几何体使用Actor
+
+- 使用Actor有基本开销
+
+  ① 加载Actor；② 内存占用；③ 垃圾回收会扫描这些Actor。
+
+- Actor很灵活，包含很多功。但静态物体不需要这些功能
+
+### 2) 物理卡顿Physics Hitch 
+
+#### 2.1) 问题起因
+
+- 大型/复杂的物理场景，会减慢物理模拟，增大内存，增加加载时间。
+- 一个复杂的物理对象，被映射到很多的场景实例中。
+
+#### 2.2) 优化措施
+
+- Static Mesh可同时拥有简单和复杂的物理对象，优化使用场景：
+
+  ① 在能使用简单物理的场景，就只使用简单物理；
+
+  ② 若场景不需要复杂的物理对象，就关闭他；
+
+  ③ "Use Simple as Complex"作为项目默认设置，只在特殊的Mesh上覆写这个设置。 
+
+- 按照下述性能友好的顺序选择简单物理：圆形 > 胶囊体 > 盒(Box) > 凸多边形。
+
+- 为永远不会发生碰撞检测的对象关闭物理模拟。
+
+- 设置合理的碰撞通道(collision channels)：只对有相关性的物体进行碰撞检测。
+
+- 优化Overlaps：如果需要overlap更新，确定其只与相关的对象检测overlap。
+
+- 取消非必要的Overlap。该选项默认对所有Object都是开启的，但只有少数Actor需要检测是否重叠：
+
+  <img src="/pic_cancel_overlap.png" alt="pic_cancel_overlap" style="zoom:50%;" />
+
+### 3) Actor生成卡顿Actor Spawning Hitch
+
+#### 3.1) 问题起因
+
+- actor生成需要在一帧内完成；
+- 昂贵的actor生成可能需要消耗数毫秒；
+- 在一帧中生成多个actor，可能会造成卡顿。
+
+#### 3.2) 优化措施
+
+- 限制每帧动态生成actor的数量；
+- 尽可能延迟component的初始化；
+- 尽可能使用actor池。
+
+### 4) PSO编译卡顿
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

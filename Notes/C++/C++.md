@@ -2608,14 +2608,70 @@ k = &j; //Error
   };
   ```
 
-
 ## 5 std::optional
 
-- 作用：用于表示一个可能**包含值**或**无值**的容器，提供了一种类型安全且语义清晰的方式，代替传统的特殊值标记，如nullptr、-1、空字符串等。
+`std::optional`是 C++17 引入的一个模板类，用于优雅地表示一个**可能存在也可能不存在的值**。
 
-  提升代码的可读性和安全性。
+`std::optional`的核心设计目标是提供一种类型安全、语义清晰的方式来处理”可选值“，避免使用特殊标记值（如 `-1`、`nullptr`）或输出参数等传统方式带来的问题。
 
-- 注意：禁止**未检查**的访问。直接访问空的optional会导致未定义的行为。
+- 类结构
+
+  `std::optional`的底层实现可以概括为 **“存储空间 + 状态标志”的组合**；
+
+  - 存储空间：容纳类型 `T` 对象的内存空间；
+  - 状态标志：一个布尔成员（如`bool has_value_`），用于指示当前`optional`对象是否包含一个有效值；
+
+  ```c++
+  template <typename T>
+  class optional {
+  private:
+      alignas(T) char storage_[sizeof(T)]; // 用于存储值的内存空间
+      bool has_value_;
+      // ........
+  };
+  ```
+
+- 构造与析构
+
+  - **默认构造**或使用 `std::nullopt` 构造时，`has_value_` 被设为 `false`，不会构造 `T` 类型的对象；
+  - **有值构造**时，通过placement new在内部存储空间上构造`T`类型的对象，并将`has_value_`设为`true`；
+  - **析构**时，如果 `has_value_` 为 `true`，则会手动调用 `T` 类型的析构函数；
+
+  ```c++
+  public:
+  	optional() : has_value_(false) {} // 默认构造，值不存在
+  
+      optional(const T& value) : has_value_(true) {
+          new (storage_) T(value); // 在 storage_ 中构造 T
+      }
+  
+      optional(T&& value) : has_value_(true) {
+          new (storage_) T(std::move(value)); // 移动构造
+      }
+  
+      ~optional() {
+          if (has_value_) {
+              reinterpret_cast<T*>(storage_)->~T(); // 手动调用析构函数
+          }
+      }
+  ```
+
+- 值访问
+
+  - 使用`value()`会**首先检查 `has_value_` 标志**，如果为`false`，则抛出 `std::bad_optional_access` 异常。这是类型安全的重要保障。
+
+    ```c++
+    T& value() 
+    {
+        if (!has_value_) 
+        {
+            throw std::runtime_error("No value present");
+        }
+        return *reinterpret_cast<T*>(storage_);
+    }
+    ```
+
+  - 运算符 `*` 和 `->` 也用于访问值，但**不进行状态检查**。因此，仅在确定有值时使用它们才是安全的，否则是未定义行为。
 
 - 示例：
 
@@ -2642,9 +2698,19 @@ k = &j; //Error
 
 ## 6 std::string_view
 
-- 理解：std::string_view是一种轻量级的**非拥有字符串视图类**，表示对字符串序列的**只读引用**。旨在避免不必要的字符串拷贝，提升字符串操作性能。同时兼容多种字符串类型(std::string、C风格字符串、字符数组等)。
+- 理解：std::string_view是一种轻量级、**非拥有的(non-owning)**、字符串视图类，用于高效表示只读的字符序列。旨在避免不必要的字符串拷贝，提升字符串操作性能。同时兼容多种字符串类型(std::string、C风格字符串、字符数组等)。
 
-- 作用：非拥有字符串视图(**字符串指针**和**长度**)，避免拷贝。
+- 作用：非拥有字符串视图，避免拷贝；
+
+- 底层实现：指针 + 长度的组合，仅包含两个私有成员变量：
+
+  const char* data_：指向字符串数据起始地址的常量指针；
+
+  size_t size_：明确记录字符串的长度；
+
+- 零拷贝思想：创建`string_view`或对其进行拷贝时，**不会复制底层字符串内容**，而仅仅是复制内部的 `data_` 指针和 `size_` 值，这是一种典型的**浅拷贝**。
+
+- 不依赖空终止符：与C风格字符串不同，`string_view` 明确存储字符串长度。这意味着它**不依赖尾部的空字符 `\0` 来确定字符串的结束**，即使该段内部或末尾包含 `\0` 也能正确处理。
 
 - 注意：
 
@@ -2658,7 +2724,7 @@ k = &j; //Error
   void processView(std::string_view msg) { ... }
   
   //case
-  processString("Hello");//传入字符串字面量, 发生隐式构造, 会进行一次拷贝
+  processString("Hello");//传入字符串字面量, 发生隐式构造,生成std::string对象, 会进行一次拷贝
   processView("Hello");  //直接生成视图, 零拷贝
   ```
 

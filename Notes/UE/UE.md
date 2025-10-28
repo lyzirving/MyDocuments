@@ -482,8 +482,9 @@ public: // Public Interface of the Scheduler
     // ........
     
 private:
-    static CORE_API FScheduler Singleton;
-    TArray<TUniquePtr<FThread>>  WorkerThreads;
+    static CORE_API FScheduler Singleton;    
+    
+    TArray<TUniquePtr<FThread>>  WorkerThreads;    //Thread.h
     TAlignedArray<FSchedulerTls::FLocalQueueType>  WorkerLocalQueues;    
     // ........
 };
@@ -655,6 +656,208 @@ WokerMain会在工作线程中被调用，为thread local的LocalQueue赋值。
 - `TLocalQueueRegistry::DequeueSteal`
 
   随机从所有本地队列中偷任务。
+
+### 6) 等待事件
+
+- 一般场景
+
+  工作线程在没任务时线程就开始等待任务，让出CPU时间，直到新的任务被派发时才会唤醒。
+
+  上述方案的不足之处就是系统事件的延迟较高，个人经验感觉在10us左右。虽然看似不多，但复杂的游戏逻辑中仍有一定的优化必要。
+
+- UE的解决方案
+
+  UE的解决方案很简单粗暴：既然我们想要减少线程反复被唤醒的概率，那么每次做完任务以后不要马上让出CPU，再空转一会就好了。
+
+#### 6.1) 等待事件/队列
+
+- FWaitEvent
+
+  为了实现这个功能，UE将一个系统事件和一些原子变量封装进`FWaitEvent`类中，每条工作线程都有一个对应的`FWaitEvent`。
+
+  ```c++
+  //WaitingQueue.h
+  namespace LowLevelTasks::Private
+  {
+  	enum class EWaitState
+  	{
+  		NotSignaled = 0,
+  		Waiting,
+  		Signaled,
+  	};
+      
+      struct alignas(64) FWaitEvent
+  	{
+  		std::atomic<uint64_t>     Next{ 0 };
+  		uint64_t                  Epoch{ 0 };
+          // 原子变量, 表示状态
+  		std::atomic<EWaitState>   State{ EWaitState::NotSignaled };
+          // 事件, 提供操作系统层面的等待和唤醒功能
+  		FEventRef                 Event{ EEventMode::ManualReset };
+  	};
+      // ........
+  }
+  ```
+
+- FWaitingQueue
+
+  为了处理Foreground/Background等逻辑，又用`FWaitingQueue`封装了一层。
+
+  注意，NodeArray持有的是等待事件队列的**引用**：
+
+  ```c++
+  class FWaitingQueue
+  {
+      std::atomic<uint64_t>      State{ StackMask };
+      // 注意这里持有的是引起
+  	TAlignedArray<FWaitEvent>& NodesArray;
+  public:
+  	FWaitingQueue(TAlignedArray<FWaitEvent>& NodesArray) : NodesArray(NodesArray)
+  	{
+  	}
+      // ........
+  };
+  ```
+
+  其中，State的布局如下：
+
+  [01~14位, 长度14] `Stack`: 记录一个线程序号；
+
+  [15~28位, 长度14] `Waiter`: 当前有多少线程是`PrepareWait`状态；
+
+  [29~42位, 长度14] `Signal`: 当前收到多少个信号等待处理；
+
+  [43~64位, 长度22] `Epoch`: 当前”时间戳”, 用来确定哪个状态更新。
+
+#### 6.2) 等待/解除等待
+
+- `FWaitingQueue::Park`
+
+  使工作线程准备进入等待状态：先空转，若状态正确再让出CPU进行等待：
+
+  ```c++
+  void FWaitingQueue::Park(...)
+  {
+      // ........
+      // 先空转, 如果空转期间, 状态发生了改变, 则直接return
+      for (int Spin = 0; Spin < SpinCycles; ++Spin) 
+      {
+          if (Node->State.load(std::memory_order_relaxed) == EWaitState::NotSignaled)
+          {
+              FPlatformProcess::YieldCycles(WaitCycles);
+          }
+          else
+          {
+              WAITINGQUEUE_EVENT_SCOPE(FWaitingQueue_Park_Abort);
+              return;
+          }
+      }
+      
+      Node->Event->Reset();
+  	EWaitState Target = EWaitState::NotSignaled;
+      // 把状态设置为waiting
+  	if (Node->State.compare_exchange_strong(Target, EWaitState::Waiting, 	
+                                              std::memory_order_relaxed, 
+                                              std::memory_order_relaxed))
+  	{
+  		WAITINGQUEUE_EVENT_SCOPE(FWaitingQueue_Park_Wait);
+  	}
+  	else
+  	{
+  		WAITINGQUEUE_EVENT_SCOPE(FWaitingQueue_Park_Abort);
+  		return;
+  	}
+      
+      // 挂起CPU, 进行等待
+      Node->Event->Wait();
+  }
+  ```
+
+- `FWaitingQueue::Unpark`
+
+  解除一个线程的等待状态。
+
+  目标线程真的开始等待事件(Node->State等于`waiting`)，才会触发事件，否则什么都不做。
+
+  除了会检查指定的线程以外，还会跟着Node->Next链表触发其他的线程。
+
+  ```c++
+  int32 FWaitingQueue::Unpark(FWaitEvent* Node)
+  {
+  	int32 UnparkedCount = 0;
+  	for (FWaitEvent* Next; Node; Node = Next)
+  	{
+  		uint64_t NextNode = Node->Next.load(std::memory_order_relaxed) & StackMask;
+  		Next = NextNode == StackMask ? nullptr : &NodesArray[(int)NextNode];
+  
+  		UnparkedCount++;
+          // 在某些设备上, signaling是很消耗的操作, 所以只在waiting状态下signaling
+  		if (Node->State.exchange(EWaitState::Signaled, std::memory_order_relaxed) == 
+              EWaitState::Waiting)
+  		{
+  			WAITINGQUEUE_EVENT_SCOPE_ALWAYS(FWaitingQueue_Unpark_SignalWaitingThread);
+  			Node->Event->Trigger();
+  		}
+  		else
+  		{
+  			WAITINGQUEUE_EVENT_SCOPE(FWaitingQueue_Unpark_SignaledSpinningThread);
+  		}
+  	}
+  	return UnparkedCount;
+  }
+  ```
+
+#### 6.3) CommitWait/CancelWait
+
+### 7) 工作线程主循环
+
+实现在`FScheduler::WorkerMain`中，流程简述：
+
+- 工作线程会不断尝试取任务执行；
+- 如果取不到任务，会进入失业状态：线程空转等待一会以后开始等待事件，并彻底沉睡；
+- 只有当其他线程调用Notify对所属队列发出信号后才会结束空转或等待，然后离开失业状态继续开始取任务；
+- 除了从失业状态离开时有概率触发Notify，剩下唯一的触发时机就是添加任务的时候。
+
+### 8) 添加任务
+
+实现在`FScheduler::TryLaunch`里，其中主要有两个函数：
+
+- `FTask::TryPrepareLaunch`让`FTask`进入`Scheduled`状态；
+- 成功进入Scheduled状态后，执行`FScheduler::LaunchInternal`。
+
+`FScheduler::LaunchInternal`逻辑：
+
+- 通过几个规则，判断任务是否应该在本线程完成；
+- 如果是, 就会将任务放进自己的`LocalQueue`中；
+- 否则就会放进全局溢出队列里；
+- 之后会根据传入的参数来决定是否唤醒其他线程，通常都会用默认值true，也就是唤醒。
+
+## 4 TaskGraph
+
+### 4.1) 初始化
+
+<img src="/pic_taskgraph_init.png" alt="pic_taskgraph_init" style="zoom:30%;" />
+
+TaskGraph初始化会：
+
+- 触发`FScheduler::StartWorkers`来创建一系列工作线程；
+- 为Game、RHI、Render三个NamedThread创建对应的`FWorkerThread`以及`FNamedTaskThread`。
+
+### 4.2) FWorkerThread
+
+```c++
+class FTaskGraphCompatibilityImplementation final : public FTaskGraphInterface
+{
+    //........
+    TArray<FWorkerThread> NamedThreads;
+};
+```
+
+NamedThreads是FWorkerThread的数组，其关键结构如下：
+
+<img src="/pic_workerthread.png" alt="pic_workerthread" style="zoom:40%;" />
+
+
 
 # UE动画系统
 

@@ -187,3 +187,181 @@ public void M()
 
 当多个闭包在不同的线程中并发地修改同一个捕获的变量时，就会产生线程安全问题。
 
+# 引擎基础
+
+## MonoBehaviour
+
+<img src="/pic_hierarchy.png" alt="pic_hierarchy" style="zoom:100%;" />
+
+- 继承关系
+
+  C#所有引用类型的基类是System.Object；
+
+  UnityEngine.Object继承System.Object，它是Unity中所有引用类型的基类；
+
+  Component继承UnityEngine.Object，它是**组件的基类**，代表所有附加在GameObject上的对象；
+
+  Behaviour是Component的子类，在Component的基础上，**添加了enable（启用或禁用）的能力**；
+
+  Behaviour有很多子类，比如Animator、Light、Camera等，其中就有MonoBehaviour。
+
+- MonoBehaviour的作用
+
+  - **生命周期管理**
+
+    提供Awake、Start、Update等回调函数，是我们可以精确控制脚本在不同阶段的初始化、更新和销毁逻辑。
+
+  - **组件化架构**
+
+    每个MonoBehaviour脚本都是一个**独立的功能模块**，可以灵活地挂载到GameObject上，这是一种遵循**单一职责原则的设计**，使得游戏对象的功能组合更加灵活。
+
+  - **丰富的引擎继承功能**
+
+    提够了提供了系统协程、物理回调、消息传递能功能。
+
+## 协程
+
+Unity协程的实现包括**两个部分**：1）编译器生成状态机；2）Unity引擎在**主线程**统一管理和调度。
+
+```c#
+IEnumerator MyCoroutine() {
+    Debug.Log("A");
+    yield return new WaitForSeconds(1);
+    Debug.Log("B");
+}
+```
+
+### 1) 状态机类
+
+C#会将其编译为如下的**状态机类**（编译后的隐藏类），通过状态变量和分段执行实现协程的暂停/恢复功能。其中`MoveNext()`中的逻辑：1）执行当前代码语句；2）执行`yield`指令后的代码；3）变量更新；
+
+```c#
+class <MyCoroutine> : IEnumerator {
+    private int _state; //状态变量
+    private object _current; //yield指令暂停的分割点
+    
+    bool MoveNext() {
+        switch(_state) {
+            case 0: // 对应yield之前的代码
+                Debug.Log("A");
+                _current = new WaitForSeconds(1);
+                _state = 1;
+                return true;
+            case 1: // 对应第一个yield之后的代码
+                Debug.Log("B");
+                _state = -1; // 结束标记
+                return false;
+        }
+        return false;
+    }
+}
+```
+
+### 2) 执行时机
+
+- 协程不是多线程，它和 `Update`、`Start` 这些生命周期函数一样，始终运行在Unity的**主线程**上；
+
+- 调用`StartCoroutine`时，协程会**立即开始执行**，直到遇到第一个`yield return`语句；
+- 遇到`yield return`后，协程被**暂停**，控制权交还给Unity引擎的主循环；
+- 引擎会在**每一帧的特定时刻（`LateUpdate`方法执行完毕之后）**，检查所有被暂停的协程的等待条件是否满足；
+- 如果某个协程的等待条件满足了，就会在上次暂停的地方继续执行，直到遇到下一个 `yield return` 或协程方法结束。
+
+### 3) Unity引擎的协程调度
+
+Unity引擎底层维护了一个活跃协程列表：
+
+- 每帧末尾检查所有活跃协程；
+- 通过`MoveNext()`推进协程到下一个`yield`点；
+- 自动移除已完成的协程。
+
+伪代码如下：
+
+```c#
+class CoroutineScheduler {
+    List<IEnumerator> _activeCoroutines;
+    
+    void Update() {
+        for(int i=0; i<_activeCoroutines.Count; i++) {
+            var coroutine = _activeCoroutines[i];
+            // 检查yield条件是否满足
+            if(IsYieldConditionMet(coroutine.Current)) { 
+                if(!coroutine.MoveNext()) { // 推进状态机
+                    _activeCoroutines.RemoveAt(i--);
+                }
+            }
+        }
+    }
+    
+    bool IsYieldConditionMet(object yieldInstruction) {
+        if(yieldInstruction == null) return true; // yield return null
+        if(yieldInstruction is WaitForSeconds wfs) 
+            return Time.time >= wfs._resumeTime;
+        // 其他yield类型判断...
+    }
+}
+```
+
+# 编译&&构建
+
+## 程序集定义Assembly Definition Asset
+
+Assembly Definition核心：改变 Unity **默认的**”所有脚本编译成单一程序集“的模式，转向**基于依赖关系的模块化编译**。
+
+<img src="/pic_ScriptCompilation.png" alt="pic_ScriptCompilation" style="zoom:80%;" />
+
+### 1) 默认程序集
+
+在没有 .asmdef 文件时，Unity 会将绝大多数脚本编译进一个名为**`Assembly-CSharp.dll`**的程序集中。
+
+**任何脚本的微小改动都会触发整个项目所有脚本的重新编译**。随着项目扩大，编译时间会急剧变长。
+
+### 2) .asmdef工作原理
+
+- 递归定义
+
+  在一个文件夹中创建 .asmdef 文件后，该**文件夹及其所有子文件夹内的脚本**会被编译成一个独立的动态链接库，除非子文件夹下有自己的.asmdef。
+
+- 声明程序集依赖
+
+  可以在.asmdef 文件中明确声明它需要引用的由其他.asmdef定义的程序集，Unity 的编译器会分析这些依赖关系，并按照正确的顺序进行编译。
+
+- 依赖分析与增量编译
+
+  当某个脚本被修改后，Unity 的编译系统会识别它所属的程序集，如A.dll。然后**只重新编译 A.dll 以及所有直接或间接依赖于 A.dll 的程序集**。这极大地减少了每次代码变更后的编译范围，从而提升迭代效率。
+
+### 3) .asmref工作原理
+
+.asmdef 是“定义”一个新的程序集；
+
+.asmref是**“引用”**一个**已存在**的程序集，并将当前文件夹的脚本“加入”到那个程序集中。
+
+<img src="/pic_asm.png" alt="pic_asm" style="zoom:30%;" />
+
+核心工作机制：
+
+- **脚本归属的“引用”原则**
+
+  它归属于在**当前文件夹或父文件夹，层级上离它最近的那个 .asmdef 或 .asmref 文件**。
+
+- **基于GUID的稳定引用**
+
+  若在面板中勾选**`Use GUIDs`**，这意味着引用关系是通过目标程序集定义文件的 **GUID（全局唯一标识符）** 来记录的，而不是其名称。即使你重命名了目标.asmdef文件或其所在文件夹，所有引用它的.asmref文件都无需更新。
+
+- **依赖关系统一管理**
+
+  通过 .asmref 聚合到同一程序集中的所有脚本，**共享该程序集定义的依赖和设置**：
+
+  ① 它们可以相互访问internal的变量(因为属于同一程序集)；
+
+  ② 它们对外部的访问权限完全由目标程序集（.asmdef）所声明的引用决定。你不需要也无法在 .asmref 文件中单独设置依赖。
+
+### 4) 程序集定义的优缺点
+
+- 优点
+  - 强制模块化，降低耦合；
+  - 精确的平台控制；
+  - 访问内部(internal)成员：使用.asmref，可以将**不同物理位置**的脚本文件夹逻辑上聚合到同一个程序集中。
+- 缺点
+  - 架构设计复杂化；
+  - 循环引用问题：程序集之间**不允许**出现循环引用(A 引用 B，B 引用 C，C 又引用 A)。
+  - 隐式全局依赖失效：在默认模式下，所有脚本都能直接访问所有类型。使用.asmdef后，跨程序集的类型访问必须通过`public`修饰符并显式添加引用。

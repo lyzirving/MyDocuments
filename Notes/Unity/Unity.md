@@ -301,6 +301,61 @@ class CoroutineScheduler {
 }
 ```
 
+# 引擎工具
+
+## Cinemachine
+
+本小节参考自[Unity官方文档Cinemachine注解](https://docs.unity3d.com/Packages/com.unity.cinemachine@3.1/manual/get-started.html)。
+
+### 1) 场景必要元素
+
+<img src="/pic_cinemachine.png" alt="pic_cinemachine" style="zoom:70%;" />
+
+- 一个捕捉场景的Unity Camera
+  - 实际是一个包含Camera组件的GameObject，它会被Cinemachine控制。
+  - Cinemachine的环境中有且只能有一个Unity Camera。
+- Unity Camera中需要一个`Cinemachine Brain`组件
+  - 监控场景中所有`Cinemachine Camera`;
+  - 决定哪个`Cinemachine Camera`会控制`Unity Camera`；
+  - 当`Cinemachine Camera`控制权变化时，处理转场。
+- 一个或多个`Cinemachine Camera`，用于轮流控制Unity Camera。
+  - `Cinemachine Camera`在旧的版本中被称为`Virtual Camera`。
+  - 实际是持有`Cinemachine Camera`组件的GameObject，动态覆盖Unity Camera的行为和属性。
+
+### 2) Cinemachine Camera的状态
+
+#### 2.1) 状态列表
+
+除了转场混合，其他任何时刻，`Cinemachine Camera`只会有一个处于Alive状态。
+
+| 状态     | 描述                                                         |
+| -------- | ------------------------------------------------------------ |
+| Alive    | Alive状态下，Cinemachine Camera正在控制Unity Camera。<br />当一个Cinemachine Camera向另一个Cinemachine Camera过渡时，会有两个处于Alive状态。完成后仍然只会有一个处于Alive。 |
+| Standby  | 此时不控制Unity Camera，但仍然跟随、瞄准target，且会执行update。<br />当前状态下GameObject仍然是active的，但优先级小于等于Alive状态下的Cinemachine Camera。 |
+| Disabled | 此状态不会控制Unity Camera，且不会跟踪、瞄准target；<br />要禁用Cinemachine Camera，直接deactive它的go就可以了。此状态下CinemachineCamera不会有调用消耗。 |
+
+#### 2.2) 如何选择Live的Cinemachine Camera
+
+默认情况下，Cinemachine Brain会负责选择Live的CinemachineCamera：
+
+- 按最高优先级选取；
+- 如果多个CinemachineCamera有相同的优先级，那么选取最近被激活的CinemachineCamera；
+- 在相机混合的过程中，deactive或低优先级的CinemachineCamera可以被激活。混合结束后，又被设置到deactive。
+
+#### 2.3) CinemachineCamera的过渡效果
+
+- 混合Blends
+
+  针对CinemachineCamera的位置、旋转和其他属性，执行一个从A到B的平滑动画。如下所示，动画完成后有CinemachineCamera2来控制Unity Camera
+
+  <img src="/pic_concept-transition-blend.png" alt="pic_concept-transition-blend" style="zoom:80%;" />
+
+- 突变Cuts
+
+  Blend是平滑过渡，Cuts是突变，即Unity Camera掌控权变化时，没有过渡。
+
+  <img src="/pic_concept-transition-cut.png" alt="pic_concept-transition-cut" style="zoom:80%;" />
+
 # 编译&&构建
 
 ## 程序集定义Assembly Definition Asset

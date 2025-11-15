@@ -2,6 +2,71 @@
 typora-root-url: pic
 ---
 
+# 编译&&构建
+
+## 程序集定义Assembly Definition Asset
+
+Assembly Definition核心：改变 Unity **默认的**”所有脚本编译成单一程序集“的模式，转向**基于依赖关系的模块化编译**。
+
+<img src="/pic_ScriptCompilation.png" alt="pic_ScriptCompilation" style="zoom:80%;" />
+
+### 1) 默认程序集
+
+在没有 .asmdef 文件时，Unity 会将绝大多数脚本编译进一个名为**`Assembly-CSharp.dll`**的程序集中。
+
+**任何脚本的微小改动都会触发整个项目所有脚本的重新编译**。随着项目扩大，编译时间会急剧变长。
+
+### 2) .asmdef工作原理
+
+- 递归定义
+
+  在一个文件夹中创建 .asmdef 文件后，该**文件夹及其所有子文件夹内的脚本**会被编译成一个独立的动态链接库，除非子文件夹下有自己的.asmdef。
+
+- 声明程序集依赖
+
+  可以在.asmdef 文件中明确声明它需要引用的由其他.asmdef定义的程序集，Unity 的编译器会分析这些依赖关系，并按照正确的顺序进行编译。
+
+- 依赖分析与增量编译
+
+  当某个脚本被修改后，Unity 的编译系统会识别它所属的程序集，如A.dll。然后**只重新编译 A.dll 以及所有直接或间接依赖于 A.dll 的程序集**。这极大地减少了每次代码变更后的编译范围，从而提升迭代效率。
+
+### 3) .asmref工作原理
+
+.asmdef 是“定义”一个新的程序集；
+
+.asmref是**“引用”**一个**已存在**的程序集，并将当前文件夹的脚本“加入”到那个程序集中。
+
+<img src="/pic_asm.png" alt="pic_asm" style="zoom:30%;" />
+
+核心工作机制：
+
+- **脚本归属的“引用”原则**
+
+  它归属于在**当前文件夹或父文件夹，层级上离它最近的那个 .asmdef 或 .asmref 文件**。
+
+- **基于GUID的稳定引用**
+
+  若在面板中勾选**`Use GUIDs`**，这意味着引用关系是通过目标程序集定义文件的 **GUID（全局唯一标识符）** 来记录的，而不是其名称。即使你重命名了目标.asmdef文件或其所在文件夹，所有引用它的.asmref文件都无需更新。
+
+- **依赖关系统一管理**
+
+  通过 .asmref 聚合到同一程序集中的所有脚本，**共享该程序集定义的依赖和设置**：
+
+  ① 它们可以相互访问internal的变量(因为属于同一程序集)；
+
+  ② 它们对外部的访问权限完全由目标程序集（.asmdef）所声明的引用决定。你不需要也无法在 .asmref 文件中单独设置依赖。
+
+### 4) 程序集定义的优缺点
+
+- 优点
+  - 强制模块化，降低耦合；
+  - 精确的平台控制；
+  - 访问内部(internal)成员：使用.asmref，可以将**不同物理位置**的脚本文件夹逻辑上聚合到同一个程序集中。
+- 缺点
+  - 架构设计复杂化；
+  - 循环引用问题：程序集之间**不允许**出现循环引用(A 引用 B，B 引用 C，C 又引用 A)。
+  - 隐式全局依赖失效：在默认模式下，所有脚本都能直接访问所有类型。使用.asmdef后，跨程序集的类型访问必须通过`public`修饰符并显式添加引用。
+
 # C#基础
 
 ## 委托Delegate
@@ -356,67 +421,204 @@ class CoroutineScheduler {
 
   <img src="/pic_concept-transition-cut.png" alt="pic_concept-transition-cut" style="zoom:80%;" />
 
-# 编译&&构建
+# 引擎系统
 
-## 程序集定义Assembly Definition Asset
+## UGUI
 
-Assembly Definition核心：改变 Unity **默认的**”所有脚本编译成单一程序集“的模式，转向**基于依赖关系的模块化编译**。
+### 1) 基础概念
 
-<img src="/pic_ScriptCompilation.png" alt="pic_ScriptCompilation" style="zoom:80%;" />
+#### 1.1) Graphic类
 
-### 1) 默认程序集
+`Graphic`类是所有可视化UI组件(如`Image`、`Text`、`RawImage`)的抽象基类。
 
-在没有 .asmdef 文件时，Unity 会将绝大多数脚本编译进一个名为**`Assembly-CSharp.dll`**的程序集中。
+- 数据生成和传递
 
-**任何脚本的微小改动都会触发整个项目所有脚本的重新编译**。随着项目扩大，编译时间会急剧变长。
+  `Graphic`的核心方法`OnPopulateMesh`负责生成定义UI形状的网格数据(顶点、颜色、UV等)，提交给同级的`CanvasRenderer`组件。
 
-### 2) .asmdef工作原理
+- 增量更新的标记系统
 
-- 递归定义
+  UGUI性能优化的关键。当UI元素的属性发生变化时，`Graphic`不会立即重新计算网格，而是调用相应的`SetVerticesDirty()`, `SetMaterialDirty()`, 或 `SetLayoutDirty()`方法，将自己标记为“脏”状态，表示需要重建顶点、材质或布局。
 
-  在一个文件夹中创建 .asmdef 文件后，该**文件夹及其所有子文件夹内的脚本**会被编译成一个独立的动态链接库，除非子文件夹下有自己的.asmdef。
+- 统一重建
 
-- 声明程序集依赖
+  所有被标记为“脏”的 `Graphic`元素都会在每帧渲染前，由 `CanvasUpdateRegistry`统一调用其 `Rebuild`方法。其会根据脏标记的类型，有选择地调用`UpdateGeometry`和`UpdateMaterial`来完成实际的数据更新。
 
-  可以在.asmdef 文件中明确声明它需要引用的由其他.asmdef定义的程序集，Unity 的编译器会分析这些依赖关系，并按照正确的顺序进行编译。
+#### 1.2) CanvasRenderer
 
-- 依赖分析与增量编译
+UI 元素(如 `Image`、`Text`)与底层图形管线之间的桥梁。
 
-  当某个脚本被修改后，Unity 的编译系统会识别它所属的程序集，如A.dll。然后**只重新编译 A.dll 以及所有直接或间接依赖于 A.dll 的程序集**。这极大地减少了每次代码变更后的编译范围，从而提升迭代效率。
+- 接收网格
 
-### 3) .asmref工作原理
+  `Graphic`组件(例如 `Image`)会调用 `OnPopulateMesh`方法来生成顶点数据，然后通过 `canvasRenderer.SetMesh()`将网格设置给 `CanvasRenderer`。
 
-.asmdef 是“定义”一个新的程序集；
+- 材质设置
 
-.asmref是**“引用”**一个**已存在**的程序集，并将当前文件夹的脚本“加入”到那个程序集中。
+  `Graphic`组件会计算最终使用的材质，通过 `canvasRenderer.SetMaterial()`进行设置。
 
-<img src="/pic_asm.png" alt="pic_asm" style="zoom:30%;" />
+- 提交数据
 
-核心工作机制：
+  `CanvasRenderer`将网格和材质信息提交给底层的`Canvas`系统。`Canvas`会负责对所有 UI 元素进行排序和合批，最终生成指令并提交给 GPU 渲染。
 
-- **脚本归属的“引用”原则**
+#### 1.3) CanvasUpdateRegistry
 
-  它归属于在**当前文件夹或父文件夹，层级上离它最近的那个 .asmdef 或 .asmref 文件**。
+`CanvasUpdateRegistry`是Unity UGUI 系统的核心调度中心，它确保所有 UI 元素都能高效、有序地更新和渲染。
 
-- **基于GUID的稳定引用**
+- 中央调度器
 
-  若在面板中勾选**`Use GUIDs`**，这意味着引用关系是通过目标程序集定义文件的 **GUID（全局唯一标识符）** 来记录的，而不是其名称。即使你重命名了目标.asmdef文件或其所在文件夹，所有引用它的.asmref文件都无需更新。
+  作为一个单例类，统一管理所有需要更新的UI元素。
 
-- **依赖关系统一管理**
+- 脏标记收集
 
-  通过 .asmref 聚合到同一程序集中的所有脚本，**共享该程序集定义的依赖和设置**：
+  维护两个独立队列：布局重建队列(`m_LayoutRebuildQueue`)和图形重建队列(`m_GraphicRebuildQueue`)，收集被标记为“脏”的元素。
 
-  ① 它们可以相互访问internal的变量(因为属于同一程序集)；
+- 有序更新管线
 
-  ② 它们对外部的访问权限完全由目标程序集（.asmdef）所声明的引用决定。你不需要也无法在 .asmref 文件中单独设置依赖。
+  在每帧渲染前，严格按照特定阶段(布局：Prelayout→Layout→PostLayout；渲染：PreRender→LatePreRender)执行重建。
 
-### 4) 程序集定义的优缺点
+- 依赖关系处理
 
-- 优点
-  - 强制模块化，降低耦合；
-  - 精确的平台控制；
-  - 访问内部(internal)成员：使用.asmref，可以将**不同物理位置**的脚本文件夹逻辑上聚合到同一个程序集中。
-- 缺点
-  - 架构设计复杂化；
-  - 循环引用问题：程序集之间**不允许**出现循环引用(A 引用 B，B 引用 C，C 又引用 A)。
-  - 隐式全局依赖失效：在默认模式下，所有脚本都能直接访问所有类型。使用.asmdef后，跨程序集的类型访问必须通过`public`修饰符并显式添加引用。
+  在布局更新前对元素进行排序(按层级深度从父到子)，确保父容器先于子元素计算，解决尺寸依赖问题。
+
+#### 1.4) Canvas
+
+- 放置UI元素，控制绘制顺序
+
+  UI元素的绘制顺序和其在Canvas层级中的显示顺序一致。层级中第一个元素最先绘制，依次类推。
+
+  可通过拖拽来改变UI元素的绘制顺序，也可通过Transform组件的：`SetAsFirstSibling`，`SetAsLastSibling`和`SetSiblingIndex`方法改变顺序。
+
+- Canvas嵌套
+
+  Canvas组件可以嵌套在另一个Canvas组件下，即**子Canvas**。
+
+  子Canvas可以把它的子物体与父Canvas分离。当子Canvas被标记为Dirty时，不会强制Rebuild父Canvas，反之亦然。
+
+- 驱动UI更新
+
+  通过**CanvasUpdateRegistry**系统，每帧管理并触发需要更新的**Layout**和**Graphic**组件进行重建。
+
+  **Layout Rebuild**：当布局改变时（如文本长度变化），重新计算 UI 元素的位置和大小；
+
+  **Graphic Rebuild**：当图形的视觉属性改变时（如颜色、纹理），重新生成图形的网格。
+
+- 执行批处理
+
+  Canvas会将其下所有UI元素的网格几何体合并，根据材质和渲染顺序等进行**批处理**，生成一个合并的大网格，尽可能减少 **Draw Call** 的数量。
+
+### 2) UI Batching合批
+
+本小节参考自：[Unity3D UGUI系列之合批](https://blog.csdn.net/sinat_25415095/article/details/112388638)。
+
+Canvas通过合并UI元素的网格，生成合适的渲染命令发送给Unity图形渲染流水线。
+
+合批的目的是为了**一次性发送尽可能多的数据**，减少Draw Call的调用。
+
+如果Draw Call过多，那么CPU就会把大量的时间花在准备数据和设置渲染状态上，造成性能问题。
+
+#### 2.1) 合批的前提
+
+- 合批是以Canvas为单位，不包含子Canvas，子Canvas会是另外一个批次；
+- 合批是在**子线程**中完成；
+- **材质**和**纹理**需要相同。
+
+#### 2.2) Depth计算规则
+
+当前所说的Depth和Image属性里的Depth是两个不同的东西。
+
+- 名词解释
+
+  - UI元素相交：UI元素的**网格**相交，而不是Rect区域：
+
+    <img src="/pic_ugui_explain_1.png" alt="pic_ugui_explain_1" style="zoom:70%;" />
+
+  - **LowerUI**：在Hierarchy面板中，CurrentUI之上的元素，如下所示：
+
+    <img src="/pic_ugui_explain.png" alt="pic_ugui_explain" style="zoom:80%;" />
+
+- 计算流程
+
+  - 按照**Hierarchy**的顺序**从上往下**遍历UI元素；
+
+  - 计算CurrentUI的Depth：
+
+    ① 如果CurrentUI不渲染(透明度为0，长宽为0，diabled，active为false)，Depth = -1；
+
+    ② 如果CurrentUI要渲染，且与其他UI元素的**网格不相交**，Depth = 0；
+
+    ③ 若CurrentUI下面**只有一个**LowerUI与其相交；
+
+    若CurrentUI、LowerUI材质和贴图相同，则可以合批，CurrentUI.Depth = LowerUI.Depth；
+
+    若CurrentUI、LowerUI不能合批，CurrentUI.Depth = LowerUI.Depth + 1；
+
+    ④ CurrentUI下有n个LowerUI的网格与其相交，则CurrentUI.Depth = max(Depth_1, Depth_2, Depth_3，…)；
+
+- 相交计算优化
+
+  源码中使用**分组计算包围盒矩形**的方法加快计算，即16个UI元素为一组计算Group网格Rect。
+
+  检查是否与底层UI元素相交时，先计算是否与**底层Group相交**，如果相交再与Group中的元素做判定。
+
+#### 2.3) VisibleList排序流程
+
+- 计算UI元素的Depth；
+
+- 按Depth升序排序，剔除Depth = -1的元素，Depth是**最高优先级**；
+- Depth相同的元素，按material ID升序排序；
+- material ID相同的元素，按texture ID升序排序；
+- texture ID相同的元素，再按Hierarchy中的顺序排序；
+- 最终得到合批前的元素，即VisibleList。
+
+#### 2.4) 执行合批
+
+判断VisiableList中相邻的元素是否有相同的材质和贴图，若满足要求，则进行合批。
+
+注意，这里只考虑材质和纹理，不用再考虑Depth和其他元素了。
+
+#### 2.5) 示例
+
+<img src="/pic_ui_batch_eg.png" alt="pic_ui_batch_eg" style="zoom:70%;" />
+
+Depth计算：Image1.Depth = 0; Image2.Depth = 0; 由于Image2和Image3重叠，且纹理不同，所以有Image3.Depth = 1;
+
+Depth相同的，按material排序：Image1 -> Image2 -> Image3；
+
+material id相同的，再按texture id排序，由于Image2.textureId < Image1.textureId，所以有：Image2 -> Image1 -> Image3；
+
+texture id相同的，再按hierarchy排序，由于Image1在Image3前，所以顺序不变：Image2 -> Image1 -> Image3
+
+最后合批，batch 0: Image2；batch 1: Image1, Image3。
+
+#### 2.6) UI合批优化
+
+- 使用图集，统一纹理；
+- Text如果能用纹理代替，尽量用纹理；
+- 避免频繁删除/增加UI元素，会引起Canvas的Rebuild；
+- 尽量不要使用Mask，内部使用了模版缓冲，至少增加两个Draw Call；
+- 动静分离，动态UI和静态UI分别使用不同的Canvas。
+
+### 3) 常见问题
+
+#### 3.1) UI元素移出屏幕后，DrawCall为什么没降低
+
+在Unity的UGUI系统中，Canvas下的所有可见UI元素会被CanvasRenderer收集并批量渲染。
+即使UI元素移出了屏幕(比如RectTransform的位置超出了可视区域)，只要：
+
+- 它的GameObject是激活的；
+- CanvasRenderer的enabled是true；
+- 透明度大于0；
+- 没有被禁用Raycast Target；
+
+UGUI还是会把它当作“需要渲染”的对象处理，只是这些像素因为超出视口范围，被裁剪掉了。
+
+#### 3.2) 如何让移出屏幕的UI不再消耗DrawCall
+
+- SetActive(false)：彻底禁用GameObject，UI不会被渲染，也不会消耗DrawCall。
+
+- CanvasRenderer.enabled = false：只禁用渲染，不影响逻辑。
+
+- 分Canvas管理：把动态UI和静态UI分到不同Canvas，动态UI隐藏时可以整体禁用Canvas，进一步减少DrawCall。
+
+- **ScrollRect/Mask**：这些组件只是限制了UI的显示区域(像素遮罩)，但并没有减少被渲染的UI数量。
+
+  高性能的列表(如ListView虚拟化)会只生成可见区域的Item，未显示的Item直接SetActive(false)，这样才能真正减少DrawCall和CPU消耗。

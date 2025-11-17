@@ -4,6 +4,96 @@ typora-root-url: pic
 
 # 编译&&构建
 
+## Mono && IL2CPP
+
+本小节参考自：[关于Mono .Net IL2CPP的理解](https://blog.csdn.net/m0_74022070/article/details/131721987)。
+
+### 1) .Net
+
+#### 1.1) .Net是一种规范
+
+.Net是微软的一种技术平台/一种规范，而不是一种语言，可以理解为接口。
+
+.NET平台支持多种语言开发，如：C#、F#、Visual Basic等。
+
+目前.Net有三种主流实现：
+
+- .Net Framework：主要是基于Windows上开发；
+- .Net Core：支持跨平台开发；
+- Mono：支持跨平台开发。
+
+跨平台的并不是C#，而是C#编译器编译后的**中间语言CIL**(Common Intermediate Language)。
+
+#### 1.2) .Net代码的编译过程
+
+- 某个语言(C#、Visual Basic)通过其特定的编译器生成**CIL**，它是一种**托管代码**，类似Java虚拟机；
+- CIL是一种伪代码，不能被计算机直接识别。它与平台操作系统无关、与CPU无关，是一种**中间语言**，为跨平台奠定了基础。它会存储在.DLL或.EXE的程序集中。
+- 程序运行时再通过**CLR**(Common Language Runtime)内部的JIT编译器将CIL编译成计算机可以识别的CPU指令(**机器码**：01010101)。
+- IL语言是在CLR中运行的，而CLR并不知道IL是由哪种语言编译而来。
+
+<img src="/pic_cil.png" alt="pic_cil" style="zoom:60%;" />
+
+#### 1.3) 托管代码和非托管代码
+
+- 托管代码
+
+  托管代码包含中间语言，需要经过虚拟机/CLR转换为CPU指令，例如C#，Java等。
+
+  托管代码不依赖于操作系统和CPU，在各个操作系统上都能执行，它是运行在虚拟机/CLR上的。
+
+- 非托管代码
+
+  非托管代码是直接对接CPU指令，代码执行效率高。
+
+  不同的操作系统需要单独编写代码，重复低效，它是运行在机器上的。
+
+  C++能跨平台可以理解为每个平台都实现了一套解析C++的运行库。
+
+### 2) Mono
+
+- Mono是什么
+
+  因为.Net Framework只能在Windows平台上运行，对于跨平台的需求，Mono就应运而生。
+
+  Mono是基于CLI和C#的ECMA标准提供的**.Net的另一种实现**，与.Net不同的是它**将CLR在所有支持的平台上重新实现了一遍**(安卓、Switch，PS4)并且还将.Net Framework提供的基础类库也重新实现了一遍。
+
+- Mono的组成
+
+  - C#编译器：C#编译器称为mcs，可以完成C#的编译工作：将C#源码编译成中间语言CIL。
+  - Mono运行时(Mono VM)：实现了ECMA公共语言架构，提供了一个即时编译器(JIT)、预编译器(AOT)、类库加载器、垃圾回收器、线程系统和互操作性功能。
+  - 基础类库(.Net类库)：提供一组全面的类，这些类兼容.Net框架并保持一致，是构建程序的结实基础。
+  - Mono类库：提供了很多超越基础类库的类，提供了额外的功能，例如一些处理Gtk+，Zip文件，LDAP，OpenGL、Cairo、POSIX等等。
+
+- Mono运行时(Mono VM)
+
+  C#编译器mcs的作用是将C#源码编译成中间语言CIL，Mono运行时的作用是将CIL转换成机器语言。
+
+  - 即时编译(JIT)
+
+    在运行过程中，将CIL编译成机器码，**解释一条语句执行一条语句**，同时也会将编译过的代码进行缓存。
+
+  - 提前编译(AOT)
+
+    在运行前，将CIL编译成机器码并储存起来，但还是有一部分编译需要用到JIT。
+
+  - 完全静态编译(Full AOT)
+
+    运行前，将所有CIL编译成机器码。如IOS平台上是禁止JIT的，所以Mono只能以Full AOT模式运行。
+
+<img src="/pic_il.png" alt="pic_il" style="zoom:70%;" />
+
+### 3) IL2CPP
+
+C#编译器编译得到中间语言后，使用IL2CPP将他们重新变回C++代码，然后再由各个平台的C++编译器直接编译成能执行的机器码：**将IL代码转换成CPP文件**。
+
+IL2CPP出现的原因如下：
+
+- Mono VM在各个平台移植，维护非常耗时，有时甚至不可能完成；
+- Mono版本授权受限，Unity无法升级Mono版本导致一些新的C#特性无法使用；
+- 提高运行效率，换成IL2CPP以后，程序的运行效率有了1.5-2.0倍的提升。
+
+<img src="/pic_il2cpp.png" alt="pic_il2cpp" style="zoom:70%;" />
+
 ## 程序集定义Assembly Definition Asset
 
 Assembly Definition核心：改变 Unity **默认的**”所有脚本编译成单一程序集“的模式，转向**基于依赖关系的模块化编译**。
@@ -420,6 +510,60 @@ class CoroutineScheduler {
   Blend是平滑过渡，Cuts是突变，即Unity Camera掌控权变化时，没有过渡。
 
   <img src="/pic_concept-transition-cut.png" alt="pic_concept-transition-cut" style="zoom:80%;" />
+
+## Timeline
+
+使用Unity Timeline构建的剪辑、影片、游戏序列会包含一个**Timeline资产**和**Timeline对象**。
+
+### 1) Timeline asset
+
+存储轨道track、动画片段clip。这些内容是独立的，与GameObject无关。
+
+<img src="/pic_timeline_asset.png" alt="pic_timeline_asset" style="zoom:80%;" />
+
+### 2) Timeline instance
+
+Timeline instance是Timeline asset和GO之间的**链接**，若使用Timeline asset来驱动GO执行动画，需要创建一个**Timeline instacne**。
+
+Timeline instance通过**Playable Director组件**来关联Timeline asset和GO。
+
+当你选择场景中持有Playeable Director组件的GO时，关联的Timeline instance会显示在Timeline Window中：
+
+<img src="/pic_spec-tl-overview-instance.png" alt="pic_spec-tl-overview-instance" style="zoom:90%;" />
+
+上图中，GroundATL这个Timeline asset**被绑定**到Ground这个GO上。
+
+### 3) 复用Timeline asset
+
+由于Timeline asset和Timeline instance是分开的，因此Timeline asset是可以重用到多个Timeline instance上。
+
+下图所示，Timeline asset VictoryTL，内部包含了一个animation、music和粒子特效，被绑定到了Player这个GO上。
+
+<img src="/pic_reuse_1.png" alt="pic_reuse_1" style="zoom:90%;" />
+
+同样的，Timeline asset VictoryTL也被绑定到Enemy这个GO上：
+
+<img src="/pic_reuse_2.png" alt="pic_reuse_2" style="zoom:90%;" />
+
+由于Timeline asset是重用的，因此对Timeline asset VictoryTL的修改会影响多个GO。
+
+### 4) Timeline操作
+
+本小节参考自：[官方文档: Timeline workflows](https://docs.unity3d.com/Packages/com.unity.timeline@1.8/manual/wf-overview.html)。
+
+#### 4.1) 录制动画
+
+- 把GO拖拽到Timeline window的track list中，Timeline window会创建一个空的轨道，并为GO添加**Animator**组件；
+
+- 点击录制后，拖动进度条到指定位置，修改GO的属性，会自动添加一个关键帧。
+
+  若在Inspector中右键点击GO的属性，也会弹出弹窗，并有“Add Key”选项。
+
+- 完成录制后，会为Timeline asset下创建一个子对象。
+
+- 如下操作，可把Infinite clip转变为Animation Clip：
+
+  <img src="/pic_spec-tl-menus-convert-clip.png" alt="pic_spec-tl-menus-convert-clip" style="zoom:80%;" />
 
 # 引擎系统
 

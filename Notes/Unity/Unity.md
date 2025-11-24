@@ -513,6 +513,362 @@ public void M()
 
 当多个闭包在不同的线程中并发地修改同一个捕获的变量时，就会产生线程安全问题。
 
+## await/async
+
+### 1) Task与await/async
+
+#### 1.1)基本用法
+
+- **Task**：表示一个异步操作，用于执行异步任务并返回结果。
+- **async**：声明异步方法，让方法内部可使用`await`。
+- **await**：等待异步操作完成，避免阻塞主线程。
+
+基本用法如下：
+
+```c#
+using System;
+using System.Threading.Tasks;
+using UnityEngine;
+ 
+public class AsyncExample : MonoBehaviour
+{
+    void Start()
+    {
+        RunTask();
+    }
+ 
+    async void RunTask()
+    {
+        Debug.Log("任务开始");
+        // 等待DoWorkAsync执行完毕后返回结果
+        string result = await DoWorkAsync();
+        // 没有显示切换主线程, 后续代码不一定会执行在主线程上
+        Debug.Log($"任务完成，结果：{result}");
+    }
+ 
+    async Task<string> DoWorkAsync()
+    {
+        await Task.Delay(2000); // 模拟耗时任务
+        return "Hello, Async!";
+    }
+}
+```
+
+进阶用法：
+
+```c#
+async void RunMultipleTasks()
+{
+    Task<int> task1 = GetNumberAfterDelay(1, 2000);
+    Task<int> task2 = GetNumberAfterDelay(2, 1000);
+    
+    int[] results = await Task.WhenAll(task1, task2);
+    // 没有显示切换主线程, 后续代码不一定会执行在主线程上
+    Debug.Log($"任务完成：{results[0]}, {results[1]}");
+}
+ 
+async Task<int> GetNumberAfterDelay(int number, int delay)
+{
+    await Task.Delay(delay);
+    return number;
+}
+```
+
+#### 1.2) 显示切换至主线程上下文
+
+- 使用SynchronizationContext
+
+  ```c#
+  private void Start()
+  {
+      // 在主线程启动时捕获主线程的同步上下文
+      _mainThreadContext = SynchronizationContext.Current;
+      StartAsyncWork();
+  }
+  
+  private async void StartAsyncWork()
+  {
+      // 在后台线程执行耗时计算
+      var result = await Task.Run(() => SomeHeavyCalculation());
+       
+      // 此时不一定回到了主线程
+      // 因为Task.Run内部的await可能会在某个线程池的线程上恢复
+      // 因此, 为了确保100%安全, 需要显示切换为主线程
+      // 当前有两种方法：
+      // 1. 使用捕获的上下文切换回主线程
+      // 2. 使用_mainThreadContext.Post进行更精细控制
+      await _mainThreadContext; 
+      
+      // 此时已回到主线程，可安全操作Unity对象
+      GameObject.CreatePrimitive(PrimitiveType.Cube);
+      Debug.Log("Result: " + result);
+  }
+  
+  private int SomeHeavyCalculation()
+  {
+      // 模拟耗时计算
+      Thread.Sleep(1000);
+      return 42;
+  }
+  ```
+
+- 自定义主线程分发器
+
+  ```c#
+  using UnityEngine;
+  using System.Collections.Concurrent;
+  using System.Threading.Tasks;
+  
+  public class MainThreadDispatcher : MonoBehaviour
+  {
+      private static readonly ConcurrentQueue<System.Action> _executionQueue = 
+          new ConcurrentQueue<System.Action>();
+      private static MainThreadDispatcher _instance;
+  
+      public static MainThreadDispatcher Instance
+      {
+          get
+          {
+              if (_instance == null)
+              {
+                  var go = new GameObject("MainThreadDispatcher");
+                  _instance = go.AddComponent<MainThreadDispatcher>();
+                  DontDestroyOnLoad(go);
+              }
+              return _instance;
+          }
+      }
+  
+      // 供其他线程调用的公共方法
+      public static void ExecuteOnMainThread(System.Action action)
+      {
+          if (action == null) return;
+          _executionQueue.Enqueue(action);
+      }
+  
+      private void Update()
+      {
+          // 在主线程的每一帧处理队列中的动作
+          while (_executionQueue.TryDequeue(out var action))
+          {
+              action?.Invoke();
+          }
+      }
+  }
+  ```
+
+- 使用TaskScheduler
+
+  `TaskScheduler`控制 `Task`的执行方式，通过获取主线程的`TaskScheduler`，可调度代码在主线程运行。
+
+  ```c#
+  using UnityEngine;
+  using System.Threading.Tasks;
+  
+  public class TaskSchedulerExample : MonoBehaviour
+  {
+      private TaskScheduler _mainThreadScheduler;
+  
+      private void Start()
+      {
+          // 在主线程捕获任务调度器
+          _mainThreadScheduler = TaskScheduler.FromCurrentSynchronizationContext();
+          StartAsyncWork();
+      }
+  
+      private async void StartAsyncWork()
+      {
+          var data = await Task.Run(() => "来自后台线程的数据");
+  
+          // 使用捕获的调度器继续执行后续代码
+          await Task.Factory.StartNew(() => 
+          {
+              // 此代码块将在主线程执行
+              Debug.Log("数据: " + data);
+              new GameObject("MainThreadObject");
+          }, CancellationToken.None, TaskCreationOptions.None, _mainThreadScheduler);
+  
+          Debug.Log("后续工作...");
+      }
+  }
+  ```
+
+### 2) await/async原理详解
+
+本小节参考自：[C# await\async原理](https://zhuanlan.zhihu.com/p/1949842363578057547)。
+
+`await`是.Net的新增特性，通过**状态机**和**回调/延续**实现。
+
+整个过程涉及**编译器**、**运行时(任务调度器)**和**底层基础设置(如Unity的PlayerLoop)**的协作。
+
+#### 2.1) 编译器生成状态机
+
+当你编写一个`async`方法并使用`await`时，C#编译器会**重写**你的方法。
+
+它会将你的方法体转换成一个**状态机类**：
+
+- **跟踪当前执行位置：** 它记录`await`语句出现的位置和状态；
+- **存储局部变量：**将原方法中的局部变量提升为状态机类的字段，以便在挂起和恢复时保持它们的值。
+- **实现`IAsyncStateMachine`接口：**该接口包含核心方法`MoveNext()`，它驱动状态机的执行。
+
+#### 2.2) await：挂起而非阻塞
+
+当执行流遇到`await someTask`：
+
+① **检查任务状态：** 首先检查 `someTask` 是否**已经完成**；
+
+② **如果Task已完成(同步完成)：** 状态机直接执行`await`之后的代码，如同没有`await`，且没有挂起发生。
+
+③ **如果Task未完成，挂起方法(返回控制权)：**
+
+- 状态机保存当前状态(执行位置)；
+
+- 状态机向`someTask`**注册一个回调(Continuation)**。
+
+  这个回调本质上是一个**委托**，指向状态机的`MoveNext()`方法，并告诉它：当 `someTask` 完成后，从这里继续执行。
+
+- `async`方法**立即返回一个`Task`(或 `UniTask`)给调用者**。
+
+  这个返回的任务代表整个异步操作的最终完成状态(**可能尚未完成**)。
+
+- **当前线程被释放** 
+
+  这是最重要的点。调用`await`的线程**不会被阻塞**，可以去做其他事情。
+
+#### 2.3) 异步任务完成
+
+- 当`someTask`所代表的底层异步操作**最终完成**时：
+
+  - **任务被标记为完成：**`someTask`的内部状态被设置为`Completed`(或 `Faulted`/`Canceled`)。
+  - **调度回调：** 完成`someTask`的机制(可能是 I/O 完成端口、Unity 的 PlayerLoop、线程池、事件系统等)负责**调度**之前注册的回调(即状态机的 `MoveNext()` 方法)执行。
+
+- 回调执行上下文
+
+  - 在Unity 中，如果`await`时指定了`PlayerLoopTiming.Update`或类似参数，或使用了 `UniTask` 的默认配置，这个回调通常会被安排到Unity 的**主线程** ，在下一帧指定阶段执行。
+
+    这是`UniTask`相对于标准`Task`的一个巨大优势，它天然理解 Unity 的线程模型。
+
+  - 标准 .NET `Task` 的回调默认可能在线程池线程执行。
+
+#### 2.4) 恢复执行：状态机推进
+
+当调度器，如Unity的PlayerLoop，执行了注册的回调(调用了状态机的MoveNext)方法：
+
+- **恢复状态：** 状态机加载之前保存的执行位置(状态)和局部变量值；
+- **获取结果(optional)：**如果 `await`的是一个有返回值的任务(如 `UniTask<int>`)，状态机会获取任务的结果；
+- **继续执行：**状态机从 `await` 语句**之后**的代码开始继续执行，就像它从未离开过一样。局部变量的值也保持原样。
+
+### 3) await/async结合UniTask
+
+#### 3.1) UniTask的优势
+
+- SynchronizationContext是单点回调机制
+
+  .NET原生的`Task`使用`SynchronizationContext`来调度`await`之后的代码。
+
+  它虽然能确保代码回到主线程，但无法精确控制回调发生的**时机**。
+
+- **UniTask深度集成到Unity的PlayerLoop中**
+
+  UniTask将自身的调度逻辑直接**注入**到了PlayerLoop的多个关键时间点。
+
+  当异步操作完成时，其回调会被放入一个队列，由PlayerLoop在**下一帧或指定的帧阶段**取出并执行。
+
+- **UniTask的回调触发流程**
+
+  - 如果任务未完成，状态机挂起，并向 `UniTask` 注册一个回调；
+  - `UniTask`内部确保这个回调在**指定的 Unity 主线程帧阶段**(如 `Update`, `LateUpdate`, `FixedUpdate`, `EndOfFrame` 等)被调用；
+  - 当异步操作完成时，`UniTask`会将该状态机的`MoveNext()`方法**加入**到对应帧阶段的待执行回调队列中。
+  - Unity 引擎在运行到那个特定的帧阶段时，会**遍历并执行**该队列中的所有回调，从而恢复你的`await`后的的代码。
+
+- **性能优化**
+
+  `UniTask` 通过避免`Task`的GC分配、使用值类型状态机、与PlayerLoop高效集成等方式，大幅提升了 Unity 中异步编程的性能。
+
+#### 3.2) 示例
+
+- 按严格顺序执行
+
+  ```c#
+  public class WorkflowManager : MonoBehaviour
+  {
+      async UniTaskVoid StartGameSequence()
+      {
+          // 顺序执行：有严格依赖关系的步骤
+          await LoadConfigAsync();        // 必须先加载配置
+          await AuthenticateUser();       // 然后进行用户认证
+          await PreloadEssentialAssets(); // 接着预加载核心资源
+  
+          // 并行执行：同时加载多个独立资源，提升效率
+          var (uiAssets, audioClips, sceneData) = await UniTask.WhenAll(
+              LoadUIAssetsAsync(),
+              LoadAudioClipsAsync(),
+              LoadSceneDataAsync()
+          );
+  
+          Debug.Log("所有准备工作完成，进入游戏！");
+      }
+  
+      private async UniTask LoadConfigAsync() { /* ... */ }
+      private async UniTask AuthenticateUser() { /* ... */ }
+      private async UniTask PreloadEssentialAssets() { /* ... */ }
+      private async UniTask<GameObject[]> LoadUIAssetsAsync() { /* ... */ }
+      private async UniTask<AudioClip[]> LoadAudioClipsAsync() { /* ... */ }
+      private async UniTask<Texture2D> LoadSceneDataAsync() { /* ... */ }
+  }
+  ```
+
+- 指定回调的帧阶段
+
+  下述展示了`UniTask.Yield`的方式，当然还有其他方式：
+
+  ```c#
+  using Cysharp.Threading.Tasks;
+  using UnityEngine;
+  
+  public class YieldExample : MonoBehaviour
+  {
+      private async UniTaskVoid Start()
+      {
+          // 在 EarlyUpdate 阶段继续执行
+          await UniTask.Yield(PlayerLoopTiming.EarlyUpdate);
+          Debug.Log("这段代码在 EarlyUpdate 阶段执行");
+  
+          // 在 FixedUpdate 阶段继续执行
+          await UniTask.Yield(PlayerLoopTiming.FixedUpdate);
+          Debug.Log("这段代码在 FixedUpdate 阶段执行");
+  
+          // 在 PostLateUpdate 阶段继续执行（适合低优先级任务）
+          await UniTask.Yield(PlayerLoopTiming.PostLateUpdate);
+          Debug.Log("这段代码在 PostLateUpdate 阶段执行，用于资源清理等");
+      }
+  }
+  ```
+
+#### 3.3) 线程切换的显示控制
+
+尽管UniTask能自动切回主线程，但它也提供了在需要时进行**显式、可控线程切换**的能力。
+
+```c#
+async UniTaskVoid FlexibleMethod()
+{
+    // 开始在主线程...
+
+    // 显式切换到线程池执行耗时计算
+    await UniTask.SwitchToThreadPool();
+    // 在线程池执行
+    var result = PerformHeavyCalculation(); 
+	........
+        
+    // 计算完成后，再显式切换回主线程
+    await UniTask.SwitchToMainThread();
+    // 在主线程执行，安全操作Unity对象
+    this.gameObject.name = $"Result: {result}"; 
+}
+```
+
+## Burst优化异步编程
+
 # 引擎基础
 
 ## MonoBehaviour

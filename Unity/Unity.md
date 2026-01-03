@@ -983,6 +983,140 @@ class CoroutineScheduler {
 }
 ```
 
+## 资产系统
+
+### Asset 和 Object
+
+#### 1) 概述
+
+- Asset：硬盘上的文件，放在项目的Asset目录下
+
+  纹理、模型、音频都是常见的Asset。
+
+  一些资产是Unity**原生类型**；
+
+  一些资产不是原生类型，需要通过**AssetImporter**导入，例如fbx。
+
+  被导入的资产被缓存在**Library**文件夹下，重启Editor后就不需要再导入。
+
+- UnityEngine.Object：序列化数据的集合，用于描述某一类资源
+
+  UnityEngine.Object是所有对象的基类，如mesh、sprite、AudioClip等。
+
+- 两个特殊的对象类型：ScriptObject、MonoBehavior。
+
+  - ScriptObject：开发者可定义其自己的资产类型。
+  - MonoBehavior：可链接到MonoScript。
+
+- Asset和Object是一对多的关系
+
+  一个特定的资产文件，包含一个或多个Objects。
+
+#### 2) 对象间的引用
+
+材质对象(Object)通常持有一个或多个纹理对象的引用，这些纹理对象由一个或多个纹理资产导入(比如JPG或PNG)。
+
+- 引用的组成：**File GUID** 和 **Local ID**
+
+  - File GUID：存放在**.meta文件**中，用于标识资源被存储在哪个文件中，是对**文件具体位置的抽象**。
+  - Local ID：由于一个资产可以包含多个Object，Local ID用于标识资产内部不同的Object。
+  - 通过组合File GUID和Local ID，Object可以被**唯一标识**。
+
+- 引用系统的特性
+
+  - 使资产与硬盘位置无关
+
+    File GUID可唯一标识一个文件。即使文件路径变化了，也不需要更新其序列化的Object。
+
+  - 若文件的File GUID失效了，那么由该资产序列化的所有Object也会失效。
+
+- Unity Editor维护**文件路径和File GUID的映射**
+
+  编辑器会维护资产路径和GUID的映射。当资产被导入时，会构建entry<path, GUID>。
+
+  当编辑打开时，若.meta文件失效了，且资产的路径没变，Unity会保证资产重新获取其File GUID。
+
+  若.meta丢失且编辑器关闭，那么该资产会失效，连同相关的Objects。
+
+#### 3) 序列化和实例化
+
+- PersistentManger
+
+  Unity内部通过*PersistentManager*维护一块**缓存**(cache)。
+
+  cache管理了File GUID、Local ID和Instance ID的映射。
+
+- Instance ID
+
+  - 将File GUID、Local ID转换为会话唯一的整数，即Instance ID。
+- Instance ID是单调递增的。当新创建的Object时，会为其赋予Instance ID。
+  - 当访问File GUID、Local ID的AssetBundle被卸载时，Instance ID会在cache中被移除。如果相同的AssetBundle被re-load，会为其分配一个全新的Instance ID。
+- 在运行时比较File GUID、Local ID是**性能不友好**的，这是设计Instance ID的初衷。
+
+#### 4) MonoScripts
+
+*MonoBehavior*持有一个*MonoScripts*的引用，*MonoScripts*持有定位*script class*的信息。
+
+*MonoScripts*包含三个string：程序集名、类名、命名空间。
+
+**在Plugin外**的C#脚本会被编译至*Assembly-CSharp.dll*；
+
+**在Plugin内**的C#脚本会被编译至*Assembly-CSharp-firstpass.dll*。当然Unity也允许自定义程序集。
+
+正是由于存在 MonoScript 对象，AssetBundle（或场景或预制件）中包含的任何 MonoBehaviour 组件实际上都不包含可执行代码。这使得不同的 MonoBehaviour 即使位于不同的 AssetBundle 中，也可以引用特定的共享类。
+
+### 资源对象的生命周期
+
+为了减少加载时间并管理应用程序的内存占用，理解 `UnityEngine.Object`的资源生命周期至关重要。
+
+#### 1) 加载Object
+
+- 加载时机
+
+  - **解引用**Object的Instance ID
+
+    当Object的源数据在磁盘上能够被定位，且没有被加载到内存中；
+
+    若需要通过Instance ID去访问Object对应的源数据，此时就会通过File GUID、Local ID去执行源数据加载。
+
+  - 调用resource-loading API或显示创建Object。
+
+- 解析Object内部关联的所有Object
+
+  当一个父Object被解析时，Unity会解析其内部所有的关联Object。
+
+  此时这些Object并未被真正加载，Unity只是将其File GUID、Local ID转换为Instance ID。当这些Object需要真正被使用时，才解引用Instance ID，加载对应的源数据。
+
+#### 2) 卸载Object
+
+- 执行未使用的资产清理
+
+  当场景被销毁或调用了*Resource.UnloadUnusedAssets*的API。
+
+  这个过程只卸载**未被引用的对象**。
+
+- 在*Resources*文件夹下的对象可以被*Resource.UnloadAsset* API卸载
+
+  这些对象的Instance ID仍然有效，File GUID、Local ID的映射仍然存在。
+
+  若其他地方解引用了该对象，其对应的源数据会被re-load。
+
+- 从*AssetBundle*加载的对象可被*AssetBundle.Unload(true)*卸载
+
+  这些对象的File GUID、Local ID会失效。
+
+  任何对该对象的引用都会成为"Missing Reference"，访问这些对象会产生*NullReferenceException*。
+
+#### 3) 加载大型层级结构
+
+- 序列化层级结构
+
+  序列化带有层级结构的GameObject时，例如Prefab，其每个go和component都会被序列化到磁盘上。
+
+  这会对反序列的效率产生影响。
+
+- 反序列化的各个阶段
+
 # 引擎工具
 
 ## Cinemachine

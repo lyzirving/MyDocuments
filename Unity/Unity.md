@@ -1227,6 +1227,40 @@ AssetBundle可以通过四种不同的API进行加载。这四种API的行为差
   - **本地内存副本**：API 内部会将 `byte[]`的完整数据复制到 Unity 引擎管理的**本地内存**中，并在此过程中**根据需要进行解压**(如果是 LZMA 格式，需要解压缩)。这是**第二份**内存占用。
   - **资源本身内存**：当从AssetBundle中加载出具体的资源(如纹理、模型)时，这些资源数据会被载入显卡或系统内存中供游戏使用。这是**第三份**内存占用。
 
+在Unity5.3.3之前，该API为**AssetBundle.CreateFromMemory**。
+
+##### 2) AssetBundle.LoadFromFile(Async)
+
+AssetBundle.LoadFromFile是一个**高效的 API**，应作为**首选**。
+
+- 按需加载：仅加载头文件，数据按需从磁盘读取
+
+  在桌面独立平台、游戏主机和移动平台上，该 API **仅加载AssetBundle的头文件(header)**。
+
+  最终，在调用加载方法(例如 `AssetBundle.Load`)时或Object的InstanceID被解引用时，数据才被加载。
+
+- 编辑器的特例
+
+  在编辑器模式下，其**将整个AssetBundle加载到内存**。这是因为编辑器环境下的I/O操作和行为与真机不同。
+
+  因此，在编辑器下进行性能剖析Profiling时，会观察到较大的内存峰值，但这**并不代表最终发布版本的真实性能**。
+
+##### 3) AssetBundleDownloadHandler
+
+##### 4) WWW.LoadFromCacheOrDownload
+
+#### 从AssetBundle中加载资产
+
+可以使用三种不同的API从AssetBundle中加载`UnityEngine.Object`，这些API都有同步和异步版本。
+
+| API                    | 用途                   | 适用场景                                                     | 性能特点                                         |
+| ---------------------- | ---------------------- | ------------------------------------------------------------ | ------------------------------------------------ |
+| LoadAsset              | 加载单个独立资源       | 需从AssetBundle中加载一个或少量几个特定资源                  | 同步快于异步，异步可避免卡顿                     |
+| LoadAllAssets          | 加载包内大量或全部资源 | **66%规则**。如果要频繁加载一个AssetBundle中超过三分之二的资源，使用`LoadAllAssets`是高效的 | 批量加载效率高于多次调用`LoadAsset`              |
+| LoadAssetWithSubAssets | 加载复合资源及其子资源 | 处理**单一主资源包含多个子对象**的情况                       | 能一次性加载逻辑上关联的所有子对象，避免多次请求 |
+
+
+
 # 引擎工具
 
 ## Cinemachine
@@ -2071,7 +2105,7 @@ Unity已不再对Animation系统进行维护，现主攻新的动画系统Mecani
 
   勾选`Bake into Pose`后，变换属于Body Transform，所以即使这里未勾选`Apply Root Motion`，但是动画依然会在场景中体现，人物会按照动画的路径行走。
 
-  但是如果我们观察Inspector中模型的Transform，其值一直不变。
+  但是观察Inspector中模型的Transform，其值一直不变。
 
   此时，如果开始一个新的动画，模型会瞬间回到起始位置（新的动画开始时候，模型处于行走动画开始时的位置）。
 
@@ -2083,7 +2117,7 @@ Unity已不再对Animation系统进行维护，现主攻新的动画系统Mecani
 
   不勾选`Bake into Pose`后，变换属于Root Transform，且勾选了`Apply Root Motion`，变换会随动画进度实时应用到模型。
 
-  自然，新的动画开始时候，模型处于上个动画结束时的位置。
+  新的动画开始时候，模型处于上个动画结束时的位置。
 
 - 不勾选`Bake into Pose`，不勾选`Apply Root Motion`
 

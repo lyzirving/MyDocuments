@@ -867,6 +867,215 @@ async UniTaskVoid FlexibleMethod()
 }
 ```
 
+## C#泛型
+
+### 原理
+
+- 编译时
+  - 当定义泛型类、方法、接口等时，编译器会进行类型检查，确保代码的类型安全。
+  - 编译器会将泛型代码编译为**IL（中间语言）代码**，并在元数据中记录**泛型参数**。
+- 运行时(JIT编译时)
+  - 当**第一次**使用某个具体类型实例化泛型时，JIT编译器会生成该特定类型的本地代码。这个过程称为“**具现化**”（instantiation）。
+  - 对于引用类型，引用类型变量只是指针，操作方式相同，且共享相同的**内存布局**（引用的大小相同），因此可以共享代码。
+  - 对于值类型，每种值类型都会生成一份独立的本地代码，因为值类型的大小和内存布局可能不同。
+
+### IL2CPP下的泛型
+
+由于IL2CPP是一个提前(AOT)编译的解决方案，它先将C#代码编译为C++代码，然后再编译为本地机器码。
+
+因此，**泛型的具现化发生在编译阶段**，而不是运行时。
+
+#### 1) 具现化流程
+
+- 在C#代码编译为IL代码时，泛型信息被保留。
+- 当使用IL2CPP时，IL代码被转换为C++代码。在这个过程中，泛型类型和方法会被具现化（实例化）为具体的类型。
+
+由于是AOT编译，**所以必须知道所有可能被使用的泛型实例化类型**，并在编译时生成对应的代码。
+
+实例化分析大致通过下述步骤完成：
+
+- 分析IL代码，找出所有泛型类型。
+- 找出所有在代码中显式使用的泛型实例化(例如，List\<int>，List\<string>等)。
+- 为这些实例化生成具体的C++代码。
+
+#### 2) IL2CPP泛型使用限制
+
+下述情况，可能会引起IL2CPP在编译时，不会发现泛型类和方法，可能引起运行时异常：
+
+- 运行时通过反射创建新的泛型实例。
+
+  ```c#
+  // case1
+  Activator.CreateInstance(typeof(SomeGenericType<>).MakeGenericType(someType));
+  // case2
+  Type genericType = typeof(List<>);
+  Type specificType = genericType.MakeGenericType(typeof(MyRuntimeType));
+  ```
+
+- 调用泛型实例的静态方法。
+
+  ```c#
+  typeof(SomeGenericType<>).MakeGenericType(someType).GetMethod("AMethod")
+      .Invoke(null, null);
+  ```
+
+- 调用静态泛型方法。
+
+  ```c#
+  typeof(SomeType).GetMethod("GenericMethod").MakeGenericMethod(someType)
+      .Invoke(null, null);
+  ```
+
+- 某些在编译时无法推断的泛型虚函数调用。
+
+- 深层嵌套的泛型值类型调用，例如 `Struct<Struct<Struct<...<Struct<int>>>>>`。
+
+为了支持上述这些情况，IL2CPP会生成适用于**任何类型参数的泛型代码**。
+
+但这类代码性能较低，因为它无法确定类型的大小，也无法区分是引用类型还是值类型。
+
+如果需要确保生成性能更优的泛型方法，可采取以下措施：
+
+- 如果泛型参数**始终为引用类型**，添加 `where : class`约束。
+
+  IL2CPP会通过引用类型共享生成回退方法，不会造成性能损失。
+
+- 如果泛型参数**始终为值类型**，添加 `where : struct`约束。
+
+  这会启用部分优化，但由于值类型大小可能不同，代码性能仍会较低。
+
+- 创建一个名为 `UsedOnlyForAOTCodeGeneration`的方法，并在其中添加希望 IL2CPP 生成的泛型类型和方法的引用。该方法无需被调用。以下示例确保生成 `GenericType<MyStruct>`的专用化实现：
+
+  ```c#
+  public void UsedOnlyForAOTCodeGeneration()
+  {
+      // Ensure that IL2CPP will create code for MyGenericStruct
+      // using MyStruct as an argument.
+      new GenericType<MyStruct>();
+  
+      // Ensure that IL2CPP will create code for SomeType.GenericMethod
+      // using MyStruct as an argument.
+      new SomeType().GenericMethod<MyStruct>();
+  
+      public void OnMessage<T>(T value) 
+      {
+          Debug.LogFormat("Message value: {0}", value);
+      }
+  
+      // Include an exception so we can be sure to know if this
+      // method is ever called.
+      throw new InvalidOperationException(
+          "This method is used for AOT code generation only. " +
+          "Do not call it at runtime.");
+  }
+  ```
+
+### 优点&&缺点
+
+- 优点
+
+  - 避免装箱/拆箱。例如，使用`List<int>`比使用`ArrayList`(存储object)性能更好。
+
+  - 类型安全，在编译时进行类型检查，减少强制类型转换。
+
+  - 代码共享。对于引用类型，在JIT时可共享一份本地代码。
+
+  - 小的泛型方法可被JIT内联
+
+    ```c#
+    public T Add<T>(T a, T b) where T : struct
+    {
+        return a + b;  // 需要运算符约束
+    }
+    
+    // 优化后等价于：
+    int result = a + b;  // 直接内联代码
+    ```
+
+- 缺点
+
+  - 代码膨胀。对于值类型，会造成类型膨胀。
+  - 首次调用开销。当**第一次**使用某个具体类型实例化泛型时，JIT编译器需要生成对应的本地代码，这会带来一定的启动开销。
+
+- C#泛型和C++模板的比较
+
+  - C++模板是编译时多态，它在编译时生成所有类型特化的代码。这可能导致代码膨胀，但运行效率高，且可以进行更复杂的元编程。
+  - C#泛型是运行时多态，在JIT编译时生成代码，在类型安全性和性能之间取得了平衡，但不如C++模板灵活。
+
+## CRTP泛化
+
+### C++中的CRTP
+
+CRTP(Curiously Recurring Template Pattern，奇异递归模板模式)是一种**C++**模板元编程技术。
+
+核心思想：**一个基类将其派生类作为泛型参数**，从而实现编译时的多态。
+
+```c++
+template <typename Derived>
+class Base {    
+    void Interface() {
+        // 在基类中可以使用Derived类型
+        static_cast<Derived*>(this)->Implementation();
+    }
+};
+
+class Derived : public Base<Derived> {
+    // 派生类继承自以自身为模板参数的基类
+};
+```
+
+- 原理：静态多态
+
+  CRTP的核心原理是静态多态（编译时多态）：基类通过模板参数知道派生类的类型，因此可以在**编译时**进行静态转换，调用派生类的方法，而无需虚函数（动态多态）的开销。
+
+- 使用场景
+
+  - **静态多态**：当需要多态行为但又不想使用虚函数（避免运行时开销）时。
+  - **代码复用**：在基类中实现通用功能，而派生类提供特定细节。例如，实现单例模式、对象计数等。
+  - **实现“编译时多态”的接口**：例如，实现一个通用的Clone函数，每个派生类都需要实现Clone，但基类可以提供通用的克隆框架。
+
+### C#中CRTP
+
+```c#
+// CRTP基类
+public abstract class BaseClass<T> where T : BaseClass<T>
+{
+    // 基类中可以调用派生类的方法
+    public void CommonOperation()
+    {
+        T derived = this as T;  // 安全的类型转换
+        derived.DerivedSpecificOperation();
+    }
+    
+    protected abstract void DerivedSpecificOperation();
+}
+
+// 派生类将自己作为泛型参数
+public class DerivedClass : BaseClass<DerivedClass>
+{
+    protected override void DerivedSpecificOperation()
+    {
+        Debug.Log("Derived class specific operation");
+    }
+}
+```
+
+- C#的CRPT和C++的区别
+
+  - C++的CRTP是编译时多态，没有运行时开销。
+  - C#的泛型在运行时实例化，且有类型检查的开销。
+  - C#的版本仍然使用虚方法（override），因此实际上还是动态多态，只是基类可以通过泛型参数知道派生类的类型。
+
+- Unity中CRPT的应用
+
+  ```c#
+  // 一个简单的CRTP风格的单例模式基类
+  public class SingletonBehaviour<T> : MonoBehaviour where T : SingletonBehaviour<T>
+  {
+  	// ......
+  }
+  ```
+
 ## Burst优化异步编程
 
 # 引擎基础

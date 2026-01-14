@@ -1076,7 +1076,121 @@ public class DerivedClass : BaseClass<DerivedClass>
   }
   ```
 
-## Burst优化异步编程
+## 老版本foreach引起内存分配
+
+- List简化源码
+
+  ```c#
+  public class List<T> : IEnumerable<T>
+  {
+      private T[] _items;
+      private int _size;
+      
+      // 获取枚举器
+      public Enumerator GetEnumerator()
+      {
+          return new Enumerator(this);
+      }
+      
+      // 值类型的枚举器（结构体）
+      public struct Enumerator : IEnumerator<T>
+      {
+          private List<T> _list;
+          private int _index;
+          private T _current;
+          
+          internal Enumerator(List<T> list)
+          {
+              _list = list;
+              _index = 0;
+              _current = default(T);
+          }
+          
+          public bool MoveNext()
+          {
+              List<T> localList = _list;
+              if ((uint)_index < (uint)localList._size)
+              {
+                  _current = localList._items[_index];
+                  _index++;
+                  return true;
+              }
+              return false;
+          }
+          
+          public T Current
+          {
+              get { return _current; }
+          }
+          
+          public void Dispose()
+          {
+              // 清理资源
+          }
+      }
+  }
+  ```
+
+- 示例
+
+  ```c#
+  // 原始代码
+  List<int> list = new List<int>{1, 2, 3};
+  foreach (var item in list)
+  {
+      // do something.
+  }
+  ```
+
+  新版本中，编译后优化如下：
+
+  ```c#
+  List<int> list = new List<int>{1, 2, 3};
+  // // 编译器直接使用结构体枚举器，避免装箱
+  List<int>.Enumerator enumerator = list.GetEnumerator();
+  try
+  {
+      while (enumerator.MoveNext()) 
+      {
+          int item = enumerator.Current;
+          // do something
+      }
+  } 
+  finally
+  {
+      enumerator.Dispose();  // 确保资源释放
+  }
+  ```
+
+  老版本中，要执行装箱操作，引起内存分配：
+
+  ```c#
+  List<int>.Enumerator enumerator = list.GetEnumerator();
+  // 在老版本的Mono中，这个结构体会被装箱到堆上
+  IEnumerator<int> boxedEnumerator = (IEnumerator<int>)enumerator; 
+  ```
+
+- 新版本的Unity进行了优化，避免了装箱操作，从而减少了内存的分配。
+
+## Burst编译器优化异步编程
+
+本小节参考自：[Manual / Burst compiler](https://docs.unity3d.com/Packages/com.unity.burst@1.8/manual/index.html)。
+
+### 概述
+
+- 核心作用
+
+  Burst**核心作用**是将特定部分的C#代码编译成运行效率极高的**原生机器码**，以释放CPU的全部性能潜力。
+
+- 受限的支持
+
+  Burst只支持受限的C#子集：`HPC#(High Performance C#)`，其使用**LLVM**将 .NET的**中间语言(IL)**转换为针对目标CPU架构进行过性能优化的代码。
+
+- 核心应用场景
+
+  Burst支持Unity的`JobSystem`和HPC#的静态方法。
+
+  需显示使用**[BurstCompile]**标记，Burst才会对其优化。
 
 # 引擎基础
 

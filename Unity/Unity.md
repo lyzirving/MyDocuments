@@ -1186,11 +1186,251 @@ public class DerivedClass : BaseClass<DerivedClass>
 
   Burst只支持受限的C#子集：`HPC#(High Performance C#)`，其使用**LLVM**将 .NET的**中间语言(IL)**转换为针对目标CPU架构进行过性能优化的代码。
 
-- 核心应用场景
+- 核心应用场景 && [BurstCompile]属性
 
   Burst支持Unity的`JobSystem`和HPC#的静态方法。
 
   需显示使用**[BurstCompile]**标记，Burst才会对其优化。
+
+### HPC#的限制 && 语言支持
+
+HPC#能支持C#中大部分的特性，具体可参考：[Supported C# features in HPC#](https://docs.unity3d.com/Packages/com.unity.burst@1.8/manual/csharp-hpc-overview.html)。
+
+#### 1 HPC#中的限制
+
+- 禁用基于 `try/catch`的异常捕获
+
+  在HPC#中，可以使用 `throw`抛出异常，但**无法使用 `try-catch`块来捕获和处理异常**。
+
+- 严格限制静态字段的写入
+
+  大多数情况下，静态字段必须是**read-only**的。
+
+  不能随意向静态字段赋值，唯一的例外是通过Unity提供的**Shared Static** 机制。
+
+  这项限制是为了保证多线程(尤其是在 Job System 并行环境下)数据访问的安全性与确定性，防止发生不可预见的竞争条件。
+
+- 禁止使用**托管类型**(managed code)及其方法
+
+  这是 HPC# 最核心的限制之一。它**完全不允许操作任何托管对象**，其中最典型的例子就是 `string`类型及其所有方法。
+
+  因为托管对象存在于由垃圾回收器（GC）管理的内存堆中，其分配、访问和回收都会带来性能开销和非确定性。
+
+  HPC# 要求所有数据都必须使用值类型(`struct`)或基于非托管内存的原生容器(如`NativeArray`)。
+
+#### 2 支持异常表达式
+
+Burst 支持 `throw`表达式，但其行为和处理方式受到严格限制。
+
+- **编辑器模式**：异常可被捕获和记录（在控制台查看），适用于调试。
+
+- **发布版本**：任何异常都会导致程序**立即终止**，这是不可恢复的致命错误。
+
+- Burst编译器的警告
+
+  为了防止开发者误用异常进行流程控制，Burst编译器会**主动发出警告**。只有明确标记了 `[Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]`属性的方法，其中抛出异常才不会引发警告。
+
+#### 3 支持Foreach and While
+
+Burst编译器支持常用的`foreach`和`while`循环结构，但存在一个重要约束：**无法对通过泛型类型参数约束(如`where T : IEnumerable<U>`)传入的集合进行迭代**。
+
+原因：Burst 需要在编译时**确切知道集合的具体类型**以进行深度优化，而泛型参数在编译时无法完全确定其底层实现细节。
+
+```c#
+// 类型编译时明确, 支持
+public static void IterateThroughConcreteCollection(NativeArray<int> list)
+{
+    foreach (var element in list)
+    {
+        // Do something
+    }
+}
+
+// 类型编译时不明确, 不支持
+public static void IterateThroughGenericCollection<S>(S list) where S : struct, IEnumerable<int>
+{
+    foreach (var element in list)
+    {
+        // Do something
+    }
+}
+```
+
+#### 4 支持静态只读字段 && 静态构造函数 && 语言支持
+
+- **编译时求值** && **只读** 
+
+  Burst会在**编译阶段**就尝试计算并确定所有静态字段和静态构造函数的结果，而不是将这些初始化工作延迟到运行时。这能最大化地消除运行时开销。
+
+  静态字段必须是 **`readonly`** 的。这防止了字段在初始化后被修改，从而保证了编译时求值结果的有效性。
+
+- **全有或全无**的评估策略 && **降级机制**
+
+  对于一个结构体，其所有静态成员的评估是一个整体。**任何一个静态成员评估失败，会导致整个结构体的静态初始化都无法在编译时完成**。这确保了评估结果的完整性和一致性。
+
+  如果无法在编译时完成求值，Burst会将这些初始化代码**打包成一个运行时函数**，在程序开始运行时执行一次。但这要求相关代码本身是符合Burst规范的。
+
+- 静态初始化中的特殊许可 && 有限的数组支持
+
+  作为一个特例，Burst允许初始化**静态只读数组**，但前提是初始化的数据来源必须是编译时可知的，如下：
+
+  ```c#
+  static readonly int[] MyArray0 = { 1, 2, 3, .. };
+  static readonly int[] MyArray1 = new int[10];
+  ```
+
+- Burst 明确禁止调用**外部函数和函数指针**，确保代码的完全的可预测性和可优化性。
+
+- 在一些特定场景下，支持使用string，具体参考：[String support](https://docs.unity3d.com/Packages/com.unity.burst@1.8/manual/csharp-string-support.html)。
+
+#### 5 调用Burst编译的代码
+
+##### 1) 托管代码中直接调用
+
+Burst编译的代码**可以直接从普通的托管C#代码中调用**，无需通过Job System或复杂的函数指针机制。
+
+这极大地简化了在现有代码库中集成性能关键函数的过程。
+
+- 调用约束：**被调用的方法及其声明类型都不得是泛型**。
+- 参数传递：为了获得最佳性能并避免不必要的数据拷贝，Burst编译的方法在接收或返回值类型(如`float4`这样的`struct`)时，应使用引用传递(`in`, `out`, `ref`)。
+
+```c#
+[BurstCompile]
+public static class MyBurstUtilityClass
+{
+    [BurstCompile]
+    public static void BurstCompiled_MultiplyAdd(in float4 mula, in float4 mulb, 
+                                                 in float4 add, out float4 result)
+    {
+        result = mula * mulb + add;
+    }
+}
+// 调用
+public class MyMonoBehaviour : MonoBehaviour
+{
+    void Start()
+    {
+        var mula = new float4(1, 2, 3, 4);
+        var mulb = new float4(-1,1,-1,1);
+        var add = new float4(99,0,0,0);
+        MyBurstUtilityClass.BurstCompiled_MultiplyAdd(mula, mulb, add, out var result);
+    }
+}
+```
+
+##### 2) 函数指针机制
+
+Burst之所以能在托管代码中被调用，因为：
+
+- 利用 **IL后处理** ，在编译时自动将标记了`[BurstCompile]`的方法包装成**函数指针**。
+- 开发者无需手动处理复杂的指针操作，Burst在幕后自动完成了**托管代码与高效原生代码之间的连接**。
+
+##### 3) DisableDirectCall
+
+DisableDirectCall默认为false，Burst 会为标记的方法生成"双重接口"——既可以通过普通 C# 直接调用，也可以通过函数指针调用。
+
+DisableDirectCall设置为`true`，则**强制**只能通过函数指针调用。
+
+`DisableDirectCall = true`的使用场景：
+
+- 在某些架构设计中，某些方法**本意就只应在特定上下文(如 Job 内部)被调用**，而不应该从任意地方调用。
+
+- 确保 AOT 编译兼容性。
+
+  在某些平台，Unity 使用**提前编译(AOT)**。若方法在AOT编译时没被调用，AOT 编译器可能会将其优化掉。
+
+  但你可能仍然想在运行时通过函数指针动态调用它。禁用直接调用可以确保该方法在 AOT 阶段被正确处理。
+
+- 避免委托开销
+
+  当通过函数指针调用时，Burst 可以生成更优化的代码。在极端性能敏感的场景，开发者希望确保调用通过函数指针进行，以获得最佳性能。
+
+  ```c#
+  // 场景：极端性能要求的数学库
+  public class MathLibrary
+  {
+      [BurstCompile(DisableDirectCall = true)]
+      public static void MatrixMultiply4x4(in float4x4 a, in float4x4 b, 
+                                           out float4x4 result)
+      {
+          // 这个操作被频繁调用，必须通过函数指针优化
+      }    
+      // 对外提供预计算的函数指针
+      public static readonly FunctionPointer<MatrixMultiplyDelegate> MultiplyPtr = 
+          new FunctionPointer<MatrixMultiplyDelegate>(MatrixMultiply4x4);
+  }
+  ```
+
+#### 6 函数指针
+
+##### 1) 简介
+
+在Burst编译器上下文中，**函数指针(function pointers)** 是一种**特殊的委托机制**。
+
+允许让Burst编译的本地代码作为可调用指针传递给C#托管代码或其他本地代码，实现高性能的跨边界函数调用。
+
+```c#
+[BurstCompile]
+public class FunctionPointerExample
+{
+    delegate float MathOperationDelegate(float a, float b);
+    
+    [BurstCompile]
+    static float Multiply(float a, float b) => a * b;
+    
+    [BurstCompile]
+    static float Add(float a, float b) => a + b;
+    
+    public void RunExample()
+    {
+        var multiplyPtr = BurstCompiler
+            .CompileFunctionPointer<MathOperationDelegate>(Multiply);
+        var addPtr = BurstCompiler
+            .CompileFunctionPointer<MathOperationDelegate>(Add);
+        
+        //通过指针调用
+        float result1 = multiplyPtr.Invoke(3.0f, 4.0f);  // 返回 12.0f
+        float result2 = addPtr.Invoke(3.0f, 4.0f);       // 返回 7.0f
+    }
+}
+```
+
+| 特性     | Burst函数指针                                                | 普通C#委托   |
+| -------- | ------------------------------------------------------------ | ------------ |
+| 编译     | AOT                                                          | JIT          |
+| 性能     | 接近原生C++                                                  | 托管代码     |
+| 优化     | 最高级别Burst优化                                            | 有限优化     |
+| 类型限制 | 无泛型：必须在编译阶段完全确定所有类型信息<br />泛型委托和开放式泛型方法会引入类型不确定性。 | 灵活支持泛型 |
+
+##### 2) 函数指针与IL2CPP
+
+Burst编译器中，函数指针与IL2CPP互操作时，需在委托上使用下述属性：
+
+- System.Runtime.InteropServices.UnmanagedFunctionPointerAttribute：CLR中定义**非托管函数指针**的元数据属性。
+- 调用约定设置为CallingConvention.Cdecl：C语言标准的调用约定。
+
+上述属性，即使开发者不显示添加，Burst也会添加此属性：
+
+```c#
+// 1) 手动添加的情况
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+delegate int MyDelegate(int x, int y);
+
+// 2) 自动添加的情况
+// 开发者看到的代码
+var ptr = BurstCompiler.CompileFunctionPointer<MyDelegate>(MyFunction);
+// Burst实际生成的代码
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate int MyDelegate_Internal(int x, int y);
+```
+
+- 编译管线
+  - C#源代码编译为IL
+  - Burst编译器处理标记[BurstCompile]的方法
+  - 为函数指针委托自动添加UnmanagedFunctionPointerAttribute
+  - IL2CPP读取属性，生成对应的C++函数指针定义
+  - 平台编译器生成最终原生代码
+  - 运行时：基于统一调用约定的函数调用
 
 # 引擎基础
 

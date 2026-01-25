@@ -1432,6 +1432,178 @@ internal delegate int MyDelegate_Internal(int x, int y);
   - 平台编译器生成最终原生代码
   - 运行时：基于统一调用约定的函数调用
 
+##### 3) 使用函数指针
+
+按下述步骤，使用Burst编译的函数指针：
+
+- 为静态函数添加`[BurstCompile]`属性；
+
+- 为包含这些静态函数的类添加`[BurstCompile]`属性。这能帮助Burst编译器找到这些静态函数；
+
+- 声明一个委托，作为这些函数的接口；
+
+- 为这些函数添加`MonoPInvokeCallbackAttribute`属性，让它们能兼容IL2CPP。
+
+  ```c#
+  // Instruct Burst to look for static methods with [BurstCompile] attribute
+  [BurstCompile]
+  class EnclosingType {
+      [BurstCompile]
+      [MonoPInvokeCallback(typeof(Process2FloatsDelegate))]
+      public static float MultiplyFloat(float a, float b) => a * b;
+  
+      [BurstCompile]
+      [MonoPInvokeCallback(typeof(Process2FloatsDelegate))]
+      public static float AddFloat(float a, float b) => a + b;
+  
+      // A common interface for both MultiplyFloat and AddFloat methods
+      public delegate float Process2FloatsDelegate(float a, float b);
+  }
+  ```
+
+- 在C#代码中，编译函数指针：
+
+  ```c#
+      // Contains a compiled version of MultiplyFloat with Burst
+      FunctionPointer<Process2FloatsDelegate> mulFunctionPointer = BurstCompiler.CompileFunctionPointer<Process2FloatsDelegate>(MultiplyFloat);
+  
+      // Contains a compiled version of AddFloat with Burst
+      FunctionPointer<Process2FloatsDelegate> addFunctionPointer = BurstCompiler.CompileFunctionPointer<Process2FloatsDelegate>(AddFloat);
+  ```
+
+- 通常情况下，`MonoPInvokeCallbackAttribute`在AOT的命名空间中是有效的。
+
+  如果它不可用，可以在本地显示声明它：
+
+  ```c#
+  public class MonoPInvokeCallbackAttribute : Attribute
+  {
+  }
+  ```
+
+- 默认情况下，Burst为job异步编译函数指针。若想使用同步编译，可使用下述属性：
+
+  `[BurstCompile(SynchronousCompilation = true)]`。
+
+- 最佳性能
+
+  若要从常规C#代码中使用这些函数指针，应将FunctionPointer<T>.Invoke（即委托实例）缓存到静态字段，以获得最佳性能：
+
+  ```c#
+  private readonly static Process2FloatsDelegate mulFunctionPointerInvoke = BurstCompiler.CompileFunctionPointer<Process2FloatsDelegate>(MultiplyFloat).Invoke;
+  
+  // Invoke the delegate from C#
+  var resultMul = mulFunctionPointerInvoke(1.0f, 2.0f);
+  ```
+
+##### 4) 性能考量
+
+在Burst中，使用job优于函数指针，尤其是在涉及`NativeContainer`(如 `NativeArray`)时。
+
+- Job能获得Burst编译器更深层次的优化；
+- `NativeContainer`(如 `NativeArray`)内若包含了托管类型的引用，函数指针无法高效处理这些container的类型检查，但是Job可以。
+
+- 不推荐的示例：
+
+  ```c#
+  ///Bad function pointer example
+  [BurstCompile]
+  public class MyFunctionPointers
+  {
+      public unsafe delegate void MyFunctionPointerDelegate(float* input, float* output);
+  
+      [BurstCompile]
+      public static unsafe void MyFunctionPointer(float* input, float* output)
+      {
+          *output = math.sqrt(*input);
+      }
+  }
+  
+  [BurstCompile]
+  struct MyJob : IJobParallelFor
+  {
+       public FunctionPointer<MyFunctionPointers.MyFunctionPointerDelegate> FunctionPointer;
+  
+      [ReadOnly] public NativeArray<float> Input;
+      [WriteOnly] public NativeArray<float> Output;
+  
+      public unsafe void Execute(int index)
+      {
+          var inputPtr = (float*)Input.GetUnsafeReadOnlyPtr();
+          var outputPtr = (float*)Output.GetUnsafePtr();
+          FunctionPointer.Invoke(inputPtr + index, outputPtr + index);
+      }
+  }
+  ```
+
+  上述示例使用函数指针会导致严重的性能损失，因为：
+
+  - **无法向量化**：函数指针每次只处理单个数据(标量)，使得Burst编译器无法使用SIMD指令进行并行计算，导致损失了最大的潜在性能增益(4-8倍)。
+  - **别名信息丢失**：调用方(Job)已知的、关于数据内存不会重叠(不互为别名)的重要优化信息，无法传递给函数指针，这阻碍了编译器进行进一步的优化。.
+  - **调用开销**：每次调用函数指针本身存在固定的**跳转开销**，在频繁调用（如循环中）时，这会累积成明显的性能负担。
+
+- 更优的示例：
+
+  ```c#
+  [BurstCompile]
+  public class MyFunctionPointers
+  {
+      public unsafe delegate void MyFunctionPointerDelegate(int count, float* input, 
+                                                            float* output);
+  
+      [BurstCompile]
+      public static unsafe void MyFunctionPointer(int count, float* input, 
+                                                  float* output)
+      {
+          for (int i = 0; i < count; i++)
+          {
+              output[i] = math.sqrt(input[i]);
+          }
+      }
+  }
+  
+  [BurstCompile]
+  struct MyJob : IJobParallelForBatch
+  {
+       public FunctionPointer<MyFunctionPointers.MyFunctionPointerDelegate> FunctionPointer;
+  
+      [ReadOnly] public NativeArray<float> Input;
+      [WriteOnly] public NativeArray<float> Output;
+  
+      public unsafe void Execute(int index, int count)
+      {
+          var inputPtr = (float*)Input.GetUnsafeReadOnlyPtr() + index;
+          var outputPtr = (float*)Output.GetUnsafePtr() + index;
+          FunctionPointer.Invoke(count, inputPtr, outputPtr);
+      }
+  }
+  ```
+
+  优化后的 `MyFunctionPointer`接收一个表示要处理元素数量的参数，并循环遍历输入和输出指针以执行大量计算。
+
+  `MyJob`则变为一个 `IJobParallelForBatch`作业，并且这个数量参数被直接传递给函数指针。
+
+  上述优化的思想为：
+
+  - **实现向量化**：函数指针现在在内部循环中处理连续数据，使 Burst 编译器能够应用 **SIMD 向量化优化**，解决了之前最大的性能瓶颈。
+  - 优先使用作业，并采用批处理设计。
+
+- 最优的示例
+
+  ```c#
+  [BurstCompile]
+  struct MyJob : IJobParallelFor
+  {
+      [ReadOnly] public NativeArray<float> Input;
+      [WriteOnly] public NativeArray<float> Output;
+  
+      public unsafe void Execute(int index)
+      {
+          Output[i] = math.sqrt(Input[i]);
+      }
+  }
+  ```
+
 # 引擎基础
 
 ## MonoBehaviour

@@ -1604,6 +1604,276 @@ internal delegate int MyDelegate_Internal(int x, int y);
   }
   ```
 
+# Effective C#
+
+本小节参考自：[【《Effective C#》提炼总结】提高Unity中C#代码质量的22条准则](https://zhuanlan.zhihu.com/p/24553860)。
+
+## 原则1: 尽可能使用属性
+
+尽可能使用属性，而不是可直接访问的数据成员。
+
+- 属性允许将数据成员作为共有接口的一部分暴露，同时仍旧提供面向对象环境下所需的封装。
+
+- 使用属性，可以非常轻松的在get和set代码段中加入检查机制。
+
+- **属性底层是通过方法实现的**，其拥有方法所有的语言特性：
+
+  1. 属性增加多线程的支持是非常方便的。可通过加强 get 和 set 访问器来提供数据访问的同步。
+
+  2. 属性可以被定义为**virtual**，也可扩展为**abstract**，也可定义为**接口**，也可使用**泛型**。
+
+     ```c#
+     // abstract属性
+     public abstract class Shape
+     {
+         public abstract double Area { get; }       // 抽象属性，无实现   
+         public abstract string Name { get; set; }  // 可读写的抽象属性
+     }
+     
+     // virtual属性
+     public class Vehicle
+     {
+         public virtual int MaxSpeed 
+         { 
+             get { return 100; }  // 默认实现 
+         }
+         
+         // 自动属性, C# 3.0引入的一种简化属性定义的语法 
+         // 编译器会自动生成一个私有字段和基本的get和set访问器。
+         public virtual string Model 
+         {  get;  set; }
+     }
+     
+     // 泛型属性
+     public class ResourceManager<T> : MonoBehaviour where T : UnityEngine.Object
+     {
+         private Dictionary<string, T> m_Resources = new Dictionary<string, T>();
+         
+          // 泛型索引器
+         public T this[string key]
+         {
+             get
+             {
+                 if (Resources.TryGetValue(key, out T resource))
+                     return resource;
+                 return null;
+             }
+             set => Resources[key] = value;
+         }
+     }
+     ```
+
+  3. 无论何时，需要在类型的公有或保护接口中暴露数据，都应该使用属性。
+
+     如果可以也应该使用索引器来暴露序列或字典。
+
+     现在多投入一点时间使用属性，换来的是今后维护时的更加游刃有余。
+
+## 原则2: 偏向使用运行时常量而不是编译时常量
+
+| 特性       | 编译时常量const            | 运行时常量readonly           |
+| ---------- | -------------------------- | ---------------------------- |
+| 值确定时机 | 编译时                     | 运行时(构造函数)             |
+| 内存位置   | 嵌入到IL中                 | 存储在托管堆中(Managed Heap) |
+| 类型限制   | 只能用于数值和字符串       | 可用于任何类型               |
+| 访问方式   | 静态访问，实际为类静态变量 | 类实例变量                   |
+| 序列化     | 不序列化                   | 可序列化                     |
+| 反射修改   | 不能通过反射修改           | 可通过反射修改               |
+
+编译时常量在编译后的IL代码(概念上)：在使用 MathConstants.PI 的地方，编译器会直接替换为 3.14159265358979，而不是引用 MathConstants 类
+
+```c#
+// 编译时常量示例
+public class MathConstants
+{
+    public const double PI = 3.14159265358979;
+    public const int MaxRetryCount = 3;
+}
+```
+
+综上，在编译器必须得到确定数值时，一定要使用const。例如特性(attribute)的参数和枚举的定义，还有那些在各个版本发布之间不会变化的值。除此之外的所有情况，都应尽量选择更加灵活的readonly常量。
+
+## 原则3: 推荐使用as或is操作符而不是强制类型转换
+
+- as：作用与强制类型转换是一样，但**不会抛出异常**。若转换不成功，会返回null。
+- is : 检查一个对象是否兼容于其他指定的类型，并返回一个Bool值，永远不会抛出异常。
+
+- as相比强制类型转换，更安全和高效
+
+  as操作符在 CIL(Common Intermediate Language)中编译为**isinst**指令：
+
+  ```c#
+  // C# 源代码
+  object obj = GetSomeObject();
+  string str = obj as string;
+  
+  // 编译后的 IL 代码（简化）
+  .locals init (
+      [0] object obj,
+      [1] string str
+  )
+  ldloc.0                // 加载 obj
+  isinst [mscorlib]System.String  // 执行类型检查
+  stloc.1                // 存储结果到 str
+  ```
+
+  在JIT层面，**isinst**实现更加高效(流程伪代码如下)：
+
+  ```c#
+  // 实际运行时的大致流程
+  public static T AsFast<T>(object obj) where T : class
+  {
+      if (obj == null)
+          return null;
+      
+      // 获取对象的类型句柄
+      IntPtr objTypeHandle = obj.GetTypeHandle();
+      IntPtr targetTypeHandle = typeof(T).TypeHandle;
+      
+      // 快速路径：检查是否匹配目标类型或其派生类型
+      if (IsInstanceOfClassFast(objTypeHandle, targetTypeHandle))
+          return Unsafe.As<T>(obj);  // 无检查的直接转换
+      
+      // 慢速路径：完整的类型检查
+      if (RuntimeTypeHandle.CanCastTo(objTypeHandle, targetTypeHandle))
+          return (T)obj;
+      
+      return null;
+  }
+  ```
+
+- **as运算符对值类型无效**。当不能使用as进行转换时，才应该使用is，否则is就是多余的。
+
+  ```c#
+  // is 操作符（C# 7.0+）
+  if (obj is int intValue)
+  {
+      // ......
+  }
+  
+  // 对于可空值类型, 可行，但有装箱/拆箱开销
+  int? nullable = obj as int?;  
+  ```
+
+## 原则4: 理解等同性判断
+
+- Object类的**静态方法**
+
+  - ReferenceEquals判断对象引用是否相等
+
+    ```c#
+    public static bool ReferenceEquals(object? objA, object? objB)
+    {
+        return objA == objB;  // 总是比较引用
+    }
+    ```
+
+  - Equals (object left, object right)判断变量**运行时类型**是否相等，会调用到Object的虚函数Equals
+
+    ```c#
+    // Object.Equals 静态方法的实现
+    public static bool Equals(object? objA, object? objB)
+    {
+        if (objA == objB)  // 引用相等或都为null
+        {
+            return true;
+        }
+        
+        if (objA == null || objB == null)
+        {
+            return false;
+        }
+        
+        // 调用实例的Equals方法
+        return objA.Equals(objB);
+    }
+    ```
+
+- **IEquatable**接口函数Equals判断对象是否值相等，并配合Object的**虚函数**Equals。
+
+  Object.Equals**默认实现**是比较引用。
+
+  ```c#
+  public class Point : IEquatable<Point>
+  {
+      public int X { get; }
+      public int Y { get; }   
+      
+      // 实现 IEquatable<T> 接口
+      public bool Equals(Point? other)
+      {
+          if (other is null) return false;
+          
+          // 比较所有相关字段
+          return X == other.X && Y == other.Y;
+      }
+      
+      // 重写 Object.Equals
+      public override bool Equals(object? obj)
+      {
+          return Equals(obj as Point);
+      }
+      
+      // 重写 GetHashCode（必须与 Equals 一致）
+      public override int GetHashCode()
+      {
+          return HashCode.Combine(X, Y);
+      }   
+  }
+  ```
+
+- 自定义类重写**静态函数**operator==()；
+
+  ```c#
+  public static bool operator ==(Point? left, Point? right)
+  {
+      if(left is null) return right is null;
+      return left.Equals(right);
+  }
+  
+  // 重载 != 运算符
+  public static bool operator !=(Point? left, Point? right) => !(left == right);
+  ```
+
+综上，不应该覆写Object.referenceEquals()静态方法和Object.Equals()静态方法，因为它们已经完美的完成了所需要完成的工作，提供了正确的判断，并且该判断与运行时的具体类型无关。
+
+对于**值类型**，我们应该总是覆写Object.Equals()实例方法和operatior==(),以便为其提供效率更高的等同性判断。
+
+对于**引用类型**，仅当你认为相等的含义并非是对象标识相等时，才需要覆写Object.Equals( )实例方法。在覆写Equals()时也要实现IEquatable<T>。
+
+## 原则5: 理解短小方法的优势
+
+- 将C#代码翻译成可执行的机器码需要两个步骤：
+
+  ① C#编译器将生成IL，并放在程序集中。
+
+  ② JIT将根据需要逐一为方法(或是一组方法，如果涉及内联)生成机器码。
+
+  短小的方法让JIT编译器能够**更好地平摊编译的代价**。短小的方法也**更适合内联**。
+
+- 简化**控制流程**也很重要。控制分支越少，JIT编译器也会越容易地找到最适合放在寄存器中的变量。
+
+- 所以，短小方法的优势，并不仅体现在代码的**可读性**上，还关系到程序**运行时的效率**。
+
+## 原则6: 选择变量初始化而不是赋值语句
+
+无论调用的是哪一个构造函数，**成员初始化器**是保证类型中成员均被初始化的最简单的方法。
+
+**初始化器将在所有构造函数执行之前执行**。
+
+```c#
+public class Example
+{
+    // 字段初始化器, 在所有构造函数前对字段进行初始化
+    private int count = 0;                    // 直接初始化字段
+    private string name = "Default";          // 字符串初始化
+    private List<string> items = new List<string>();  // 对象初始化
+    // ........
+}
+```
+
+其优点是：简洁、易读、防止构造器初始化遗漏。
+
 # 引擎基础
 
 ## MonoBehaviour

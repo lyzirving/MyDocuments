@@ -1857,9 +1857,11 @@ public class MathConstants
 
 ## 原则6: 选择变量初始化而不是赋值语句
 
+### 类成员初始化
+
 无论调用的是哪一个构造函数，**成员初始化器**是保证类型中成员均被初始化的最简单的方法。
 
-**初始化器将在所有构造函数执行之前执行**。
+**成员初始化器将在所有构造函数执行之前执行**。
 
 ```c#
 public class Example
@@ -1873,6 +1875,111 @@ public class Example
 ```
 
 其优点是：简洁、易读、防止构造器初始化遗漏。
+
+### 静态初始化
+
+- **静态构造函数**：特殊的构造函数，用于初始化类的静态成员。
+  - 它会在类的任何静态成员被访问之前或类的任何实例被创建之前自动调用。
+  - 在整个应用程序域的生命周期内最多只执行一次。
+- **静态初始化器**：**静态字段的初始化器**，它是在静态构造函数执行之前被运行的。
+
+```c#
+class MyClass
+{
+    private static int myStaticField = 42;
+    
+    static MyClass()
+    {
+        // 初始化静态成员
+    }
+}
+```
+
+## 原则7: 理解虚函数和接口函数的区别
+
+- 接口中声明的成员方法默认情况下是**非虚方法**。
+
+  派生类不能覆写基类中实现的非虚接口成员。若要覆写的话，将接口方法声明为virtual即可。
+
+- 基类可以为接口中的方法提供默认的实现。
+
+  派生类继承了基类，所以也默认实现了该接口。
+
+- 虚函数是通过**虚函数表**实现的：
+
+  - **虚表(VTable)**：每个类型(类或接口)都有一个虚表，虚表中存放着该类型的**虚方法指针**。
+
+    当类被加载时，CLR会为它创建虚表。
+
+  - **虚表指针(VPtr)**：每个对象实例都有一个指向其类型虚表的指针。
+
+    在C#中，这个指针通常位于对象实例的内存布局的开头(但具体位置可能因CLR版本和平台而异)。
+
+  - **虚方法调用**：当调用一个虚方法时，CLR会通过对象的虚表指针找到虚表，然后在虚表中找到对应的方法指针，并通过该指针调用方法。
+
+    虚方法调用比非虚方法调用**多一次间接寻址**，因此有轻微的性能开销。但在大多数情况下，这种开销可以**忽略不计**。
+
+  - **继承和重写**：当子类重写父类的虚方法时，子类的虚表中对应的方法指针会被替换为子类重写后的方法地址。这样，通过子类对象调用虚方法时，就会调用子类的方法。
+
+- 接口函数也是通过**虚函数表**实现的：
+
+  接口方法的调用也是通过虚表来实现的，但接口的虚表结构更复杂，因为一个类可以实现多个接口。
+
+  CLR会为**每个接口创建一个单独的虚表**，对象实例中会有**多个虚表指针指向不同的接口虚表**。
+
+## 原则8: 避免返回对内部类对象的引用
+
+- 若将引用类型通过公有接口暴露给外界，那么对象的使用者即可绕过我们定义的方法和属性来更改对象的内部结构，这会导致常见的错误。
+- 共有四种不同的策略可以防止类型内部的数据结构遭到有意或无意的修改：
+  1. 值类型。当客户代码通过属性来访问值类型成员时，实际返回的是值类型的对象副本。
+  2. 常量类型。如System.String。
+  3. 定义接口。将客户对内部数据成员的访问限制在一部分功能中。
+  4. 包装器(wrapper)。提供一个包装器，仅暴露该包装器，从而限制对其中对象的访问。
+
+## 原则9: 仅用new修饰符处理基类更新
+
+使用new操作符修饰类成员可以重新定义继承自基类的非虚成员，用于解决基类方法和派生类方法冲突的问题。
+
+new操作符必须小心使用。若随心所欲的滥用，会造成对象调用方法的二义性。
+
+new是**方法隐藏**，不具备多态性。
+
+```c#
+public class BaseClass
+{
+    public void NormalMethod() => Console.WriteLine("Base Normal");
+    public virtual void VirtualMethod() => Console.WriteLine("Base Virtual");
+}
+
+public class DerivedClass : BaseClass
+{
+    // 使用 new 隐藏基类方法
+    public new void NormalMethod() => Console.WriteLine("Derived New");
+    
+    // 使用 override 重写虚方法  
+    public override void VirtualMethod() => Console.WriteLine("Derived Override");
+}
+
+// 测试代码
+public class TestNewVsOverride
+{
+    public static void Demo()
+    {
+        DerivedClass derived = new DerivedClass();
+        BaseClass asBase = derived;
+        
+        Console.WriteLine("=== 直接调用 ===");
+        derived.NormalMethod();       // 输出: Derived New
+        derived.VirtualMethod();      // 输出: Derived Override
+        
+        Console.WriteLine("=== 通过基类引用调用 ===");
+        asBase.NormalMethod();        // 输出: Base Normal (new 不具多态性)
+        asBase.VirtualMethod();       // 输出: Derived Override (override 具多态性)
+    }
+}
+```
+
+
 
 # 引擎基础
 
@@ -2918,8 +3025,6 @@ Unity当前基于Boehm GC，有下述特性：
 
 ## AssetBundle
 
-### 概述
-
 - AssetBundle的本质是一个**归档格式**。
 
   它将多个独立的资源文件（如模型、纹理、音频等）打包整合成一个单一的文件，类似于ZIP压缩包。
@@ -2931,40 +3036,16 @@ Unity当前基于Boehm GC，有下述特性：
   - 减小初始安装包体积：非核心资源可放在服务器上，用户只需按需下载。
   - 灵活的运行时内存管理：允许你按需加载资源，并在使用完毕后及时卸载。
   - 支持内容差异化与优化：针对不同的设备性能（如高端/低端GPU）、屏幕分辨率或语言地区，创建不同版本的AssetBundle（即AssetBundle Variants）。在运行时能够有选择性地加载。
+  
+- AssetBundle内部组成(参考自：[effective-asset-management-in-unity-with-addressables](https://discussions.unity.com/t/effective-asset-management-in-unity-with-addressables/1621379))
 
-### 数据布局
-
-AssetBundle由两部分组成：**头文件（header）**和**数据段（data segment）**。
-
-- 头文件
-
-  **头文件**包含关于AssetBundle本身的信息，例如其标识符、压缩类型和一个**清单(manifest)**。
-
-  manifest是一个以Object名称作为key的查找表。每个条目(entry)使用一个字节作为索引，指明Object在AssetBundle数据段中的位置。
-
-- manifest是**平衡搜索树**
-
-  特别的，Windows和OSX衍生平台(包括iOS)采用**红黑树**。
-
-  随着AssetBundle内资源数量的增长，构建此清单所需的时间将会以**超线性**的方式增加。
-
-- 数据段 && 压缩
-
-  **数据段**包含将通过AssetBundle中的资源序列化后生成的原始数据。
-
-  如果压缩方案指定为**LZMA**，则所有序列化资源的完整字节数组会被一起压缩。
-
-  如果指定的是**LZ4**，那么不同资源的字节数据会被**分别独立压缩**。
-
-  如果不使用压缩，数据段将保持为原始的字节流。
-
-- Unity5.3之前
-
-  Unity 5.3之前，对象无法在AssetBundle内部进行独立压缩。
-
-  因此，如果需要从压缩的AssetBundle中读取一个或多个对象，Unity 5.3之前的版本将不得不解压整个AssetBundle。
-
-  通常，Unity会**缓存一份AssetBundle解压后的副本**，以提高后续对同一AssetBundle加载请求的性能。
+  | 组成         | 作用                                                         | 影响                                                         |
+  | ------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+  | 游戏资源     | 加载后在游戏中使用                                           |                                                              |
+  | 目录表       | 资源包内部资产的索引地图，用于按名称查找和定位具体资源。     | 内存和磁盘占用很小，是必要开销。                             |
+  | 预加载表     | 列出包内每个资产的依赖关系，确保依赖资产被正确加载。         | 通常内存占用可忽略。**极长的依赖链**可能会使其体积增大，需留意。<br />通过合理的资源分组来管理依赖深度，避免过长的依赖链。 |
+  | 引擎版本信息 | 记录构建该资源包所用的 Unity 引擎版本。                      | 可能导致**资源包被错误判定为已更改**。<br />使用 **ContentBuildFlags.StripUnityVersion** 构建标志，剥离版本信息(存为0.0.0)，避免无效变更。 |
+  | 类型树       | 定义资源包内对象的序列化数据格式，是**跨不同Unity版本加载资源包时的兼容性保障**。 | 运行时类型树在内存中为**全局缓存**，相同类型的对象不会重复占用内存。 |
 
 ## AssetBundle && Addressable
 
@@ -3249,6 +3330,74 @@ public class AssetBundleRefCounter
   │  Native I/O  │
   └──────────────┘
   ```
+
+## Addressable
+
+本小节参考自：[Effective asset management in Unity with Addressables](https://discussions.unity.com/t/effective-asset-management-in-unity-with-addressables/1621379)。
+
+### 分组原则
+
+- **按功能/使用时机分组**(如：“教程组”、“关卡1组”)，而非按资源类型分组(如：“材质组”、“UI组”)。
+
+- 将公共依赖项放入独立组。
+
+- **倾向于使用多个更小的分组**，尤其是在使用时机不确定时。
+
+  更细的粒度允许**更精确的加载和卸载**，减少一次性加载不必要内容的内存压力，便于后续更新。
+
+### 依赖管理
+
+在运行时加载一个asset bundle时，该包的所有**依赖项也需要被加载**。若该资源包含不清晰的依赖关系树，可能导致加载单个资源引发数百个资源下载。
+
+冗长依赖链的常规解决方案：将某个资源移出至某个公共的asset bundle中，以打破冗长的依赖链。
+
+可通过下述方式**检查依赖**：
+
+- **Select Dependencies**：在Editor中右键单击某个资源，点击**Select Dependencies**，Unity会在Inspector中显示其所有的依赖。
+
+- 运行时，可使用**Addressables Profiler Module**跟踪哪些资源被加载了。
+
+- 在代码中使用 **AssetReferences**。
+
+  **AssetReferences** 是 Addressable 系统中的一种**弱引用类型**，它允许你在脚本中声明一个可寻址资源的引用，但**不会**在场景加载时自动加载该资源，从而让你能精确控制资源的加载与卸载时机。
+
+  其使用方式如下：
+
+  | 步骤     | 操作                                                         | 说明                                                         |
+  | -------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+  | 声明字段 | public AssetReference myPrefabRef;<br/>或使用类型安全的子类。 | 在 `MonoBehaviour`或 `ScriptableObject`中声明。<br />使用泛型子类**在 Inspector 中限制可分配的资源类型**，避免错误。 |
+  | 分配资源 | 在**Inspector** 中，将资源**拖拽**到该字段上。               | 即使资源尚未标记为 Addressable，拖拽后也会**自动将其标记并添加到默认组**。 |
+  | 异步加载 | LoadAssetAsync\<T\>                                          |                                                              |
+  | 释放     | Addressables.Release(handle)                                 | 需要手动释放，避免内存泄漏。                                 |
+  | 优势     |                                                              | 1.传统的 `public GameObject`是强引用，迫使资源在场景加载时全部载入。AssetReference允许按需加载，减少内存峰值。<br />2.资源在项目中的**路径或名称发生改变时**，只要Addressable的Key不变，**引用它的 AssetReference 字段就无需修改**。<br />3.依赖关系优化：通过将共享资源设为 AssetReference，可以避免它们被捆绑到特定的功能包中，从而减少不必要的依赖链和包体体积。 |
+
+### 使用特性
+
+- 混合使用Addressable和非Addressable的陷阱
+
+  当一个Addressable资源直接引用一个非Addressable资源时，它将该资源的一个**副本**带入其所在的asset bundle中。
+
+  例如，假设有两个prefab，分属不同的group和不同的asset bundle，但它们都使用了同一个**非Addressable材质**。那么，每个预制体所在的asset bundle都会**包含一份该材质的副本**，因为它不是Addressable资源。
+
+  这会导致构建体积增大，运行时内存使用也会增加。因此：
+
+  - 当你迁移到Addressables时，应确保将所有可能的资源都移入至Addressables系统。如果选择混合方案，可能会带来很多陷阱。
+  - 对于场景，正确的方法是用一个**轻量级的非Addressable引导(bootstrap)场景**，负责初始Addressable场景，然后确保所有其他场景都标记为Addressable。
+
+- 加载和卸载
+
+  - 每当使用asset bundle中的一个资源时，Unity会确保对应的资源包已加载到内存中，然后才将该资源加载到内存。
+
+  - **一旦asset bundle中的任何一个资源被加载，只有在该资源包中的所有资源都不再需要时，它才能被卸载**。
+
+    因此需要避免将很多资源划分到一个bundle中，资源分组不当，很容易造成OOM。
+
+- Loading Cache
+
+  - 一个**全局共享**的内存池，用于缓存所有 AssetBundle 最近被访问的数据(如序列化信息)。
+  - 在旧系统中(Unity 2019.4 LTS 之前)，每个 AssetBundle 都有自己独立的“序列化文件缓冲区”。**大量小资源包会导致每个包都占用独立的缓冲内存，内存开销线性增长**。
+  - 引入全局缓存后，无论有多少个小资源包，它们都**共享同一块缓存区域**。这**极大地降低了对小资源包策略的内存惩罚**。
+  - **默认值**：1 MB (`AssetBundle.memoryBudgetKB = 1024`)。
 
 # 物理系统
 

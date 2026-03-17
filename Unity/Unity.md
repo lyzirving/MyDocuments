@@ -3399,6 +3399,193 @@ public class AssetBundleRefCounter
   - 引入全局缓存后，无论有多少个小资源包，它们都**共享同一块缓存区域**。这**极大地降低了对小资源包策略的内存惩罚**。
   - **默认值**：1 MB (`AssetBundle.memoryBudgetKB = 1024`)。
 
+# URP
+
+## 基础概念
+
+### Drall Call && SetPass Call
+
+- 概要
+
+  | 特性     | Drall Call                             | SetPass Call                                                 |
+  | -------- | -------------------------------------- | ------------------------------------------------------------ |
+  | 目的     | 绘制网格                               | 设置渲染状态(Set Render Pass)                                |
+  | 开销     | 相对较小                               | 相对较大                                                     |
+  | 触发条件 | 每次绘制网格<br />SetPass Call之后执行 | 每次切换渲染状态，如着色器、纹理绑定、材质属性、混合模式、深度测试等<br />在Draw Call之前执行 |
+  | 优化目标 | 减少数量                               | 减少数量                                                     |
+
+- 批处理
+
+  如果多个Draw Call使用**相同的渲染状态**，那么一个SetPass Call后可以跟随多个Draw Call：这就是批处理Batching的基本原理。
+
+  如果渲染状态不变(即没有发生SetPass Call)，连续多个Draw Call的开销会小很多。
+
+- 减少SetPass Call
+
+  - **合并材质**：尽可能让多个物体共享同一个材质。
+  - **使用纹理图集**：将多个纹理合并到一张大纹理上，从而减少材质数量。
+  - **减少着色器变体**：避免使用过多的Shader变体，因为每个变体都可能导致额外的SetPass Call。
+
+- 减少Drall Call
+
+  - **静态批处理**：对于不会移动的物体，标记为Static，Unity会自动合并。
+  - **动态批处理**：对于小网格且使用相同材质的物体，Unity会在每帧动态合并(注意顶点数限制)。
+  - **GPU Instancing**：对于相同网格和材质的物体，使用GPU实例化。
+
+### 性能瓶颈SetPass Call
+
+如下图所示，绘制一个蓝色和红色三角形，由于它们的渲染参数不一样。
+
+所以首先要执行SetPass Call设置渲染状态，再执行Drall Call绘制。**真正的性能瓶颈在SetPass Call**，而非Draw Call。
+
+<img src="/pic_setpasscall.png" alt="pic_setpasscall" style="zoom:50%;" />
+
+### Build-In管线多Pass的影响
+
+假设场景中两个白色立方体，两个红色立方体，会产生2个SetPass Call，4个Drall Call：
+
+<img src="/pic_build-in_multiple_pass_1.png" alt="pic_build-in_multiple_pass_1" style="zoom:67%;" />
+
+若给每个立方体新增一个pass绘制描边，那么则会产生8个SetPass Call，8个Draw Call：
+
+<img src="/pic_build-in_multiple_pass_2.png" alt="pic_build-in_multiple_pass_2" style="zoom:70%;" />
+
+**这就是URP把处理多Pass干掉的原因**。类似需求通过定制Render Feature实现，从而优化游戏性能。
+
+## SRP Batcher
+
+本小节参考自：[SRP Batcher原理](https://edu.uwa4d.com/lesson-detail/283/1323/0?isPreview=0)。
+
+| 特性     | 传统Pipeline                               | SRP Batcher                                                  |
+| -------- | ------------------------------------------ | ------------------------------------------------------------ |
+| 执行流程 | 每帧收集数据->提交数据->绑定数据->DrawCall | 数据保存在GPU内存中，数据变化后更新GPU内存<br />提交数据一次，每帧只需绑定数据 |
+| 打断方式 | shader相同，材质属性不同，打断SetPassCall  | 着色器/着色器变种变化，打断SRP Batcher<br />只要着色器变种相同，即使不同材质也不会打断<br />多Pass会打断SRP Batcher |
+
+<img src="/pic_pipeline_contrast.png" alt="pic_pipeline_contrast" style="zoom:80%;" />
+
+### 内存布局
+
+SRP Batcher会将模型的坐标信息、材质信息、主光阴影参数、非主光阴影参数保存到不同的**CBUFFER**，CBUFFER发生变化才会提交。
+
+Shader在显存中通过每帧变化的坐标信息和每帧不一定变化的材质信息渲染出来。
+
+<img src="/pic_cbuffer.png" alt="pic_cbuffer" style="zoom:70%;" />
+
+```glsl
+┌─────────────────────────────────────────────────┐
+│            SRP Batcher 内存结构                  │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│  ┌─────────────────────────────────────────┐    │
+│  │        Per-Object Constant Buffer       │    │
+│  │                                         │    │
+│  ├─────────────────────────────────────────┤    │
+│  │  Object 1:                              │    │
+│  │    • _ObjectToWorld (float4x4)          │    │
+│  │    • _WorldToObject (float4x4)          │    │
+│  │    • ...                                │    │
+│  ├─────────────────────────────────────────┤    │
+│  │  Object 2:                              │    │
+│  │    • _ObjectToWorld                     │    │
+│  │    • _WorldToObject                     │    │
+│  │    • ...                                │    │
+│  └─────────────────────────────────────────┘    │
+│                                                 │
+│  ┌─────────────────────────────────────────┐    │
+│  │       Per-Material Constant Buffer      │    │
+│  │       (MyLitShader)                     │    │
+│  ├─────────────────────────────────────────┤    │
+│  │  Material 1:                            │    │
+│  │    • _Color (float4)                    │    │
+│  │    • _MainTex_ST (float4)               │    │
+│  │    • _Metallic (float)                  │    │
+│  ├─────────────────────────────────────────┤    │
+│  │  Material 2:                            │    │
+│  │    • _Color                             │    │
+│  │    • _MainTex_ST (float4)               │    │
+|  |    • _Metallic (float)                  |    |
+│  └─────────────────────────────────────────┘    │
+│                                                 │
+│  ┌─────────────────────────────────────────┐    │
+│  │       Per-Material Constant Buffer      │    │
+│  │       MyLitShader(keyword: _NORMALMAP)  │    │
+│  ├─────────────────────────────────────────┤    │
+│  │  Material 1:                            │    │
+│  │    • _Color (float4)                    │    │
+│  │    • _BumpScale (float)                 │    │
+│  │    • _Specular (float)                  │    │
+│  ├─────────────────────────────────────────┤    │
+│  │  Material 2:                            │    │
+│  │    • _Color                             │    │
+│  │    • _BumpScale (float)                 │    │
+|  |    • _Specular (float)                  |    |
+│  └─────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────┘
+```
+
+所有Mesh的CBUFFER共享同一套内存模版，放在一个较大的内存中。
+
+材质的CBUFFER是根据**着色器/着色器变体**分块的，所以SRP Batcher能通过**减少SetPassCall**来提升性能。
+
+- 同一个SRP Batch内的材质，属性共享**同一个内存布局模板**，从而被打包到**同一个UnityPerMaterial CBUFFER 池**中。
+- 不同着色器或不同着色器变体的材质，其 `UnityPerMaterial`CBUFFER是**物理隔离**的，位于 GPU 内存的不同区域。
+- 为了最大化SRP Batcher的批处理效率，应尽可能减少**着色器变体数量**：谨慎使用`multi_compile`和`shader_feature`。
+
+### 自定义材质CBUFFER
+
+```glsl
+CBUFFER_START(UnityPerMaterial)
+float _BaseMap_ST;
+half4 _BaseColor;
+half4 _SpecColor;
+half4 _EmissionColor;
+half4 _Cutoff;
+// 其他属性......
+CBUFFER_END
+```
+
+同一个材质只能写一个`CBUFFER_START(UnityPerMaterial)`。
+
+## SRP渲染管线
+
+SRP渲染管线是基于CPU层的，主要做了：收集渲染数据、裁剪与排序、提交数据到GPU。
+
+### CPU渲染管线
+
+- 准备渲染数据：场景中已启动的、能被摄像机看见的游戏对象(Render组件)。
+
+- 裁剪数据：落在摄像机外的游戏对象会被剔除。
+
+- 渲染排序：不透明物体**从前往后**渲染，半透明物体**从后往前**渲染。半透明物体不写入深度。
+
+- 提交GPU
+
+- 引起卡顿的原因：CPU Bound、GPU Bound。
+
+  <img src="/pic_performance.png" alt="pic_performance" style="zoom:80%;" />
+
+### GPU渲染管线
+
+渲染管线是硬件的行为，软件无法控制。目前移动端主要采用高通的芯片和Mali的芯片，本小节以Mali的GPU架构进行讨论。
+
+#### 1 TBR架构(Tile Based Rendering)
+
+**芯片内**保留了**片上内存**(Local Tile Memory)，**芯片外**是主存，芯片访问主存需要经过**带宽**。
+
+理想情况下，芯片应尽可能地访问片上内存，但是**片上内存的容量是有限的**。
+
+<img src="/pic_tbr_workflow.png" alt="pic_tbr_workflow" style="zoom:50%;" />
+
+- GPU从主存读取顶点信息，执行顶点着色器。
+- GPU将顶点数据以**Tile的形式写回主存**。
+- GPU执行片元着色器，同时将顶点的Tile数据从主存读取进来，再采样主存中的贴图，进行着色。
+- GPU将着色信息保存在Local Tile Memory中。这一步在片上，不占用带宽。
+- 最后将着色的Tile信息写回到主存的FrameBuffer中。**若前后2帧中，某个Tile的数据是一致的，就不用回写，体现了TBR的优势**。
+
+#### 2  顶点着色器
+
+#### 3 片元着色器
+
 # 物理系统
 
 ## Tips && Tricks
@@ -3407,7 +3594,7 @@ public class AssetBundleRefCounter
 
 本小节参考自：[Know the difference between ForceModes](https://www.reddit.com/r/Unity3D/comments/psukm1/know_the_difference_between_forcemodes_a_little/)。
 
-<img src="/pic_force_mode.png" alt="pic_force_mode" style="zoom:50%;" />
+<img src="/pic_force_mode.png" alt="pic_force_mode" style="zoom:30%;" />
 
 ### Collider和Trigger
 

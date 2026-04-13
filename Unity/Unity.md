@@ -2971,6 +2971,8 @@ public class AssetBundleRefCounter
 
 ## 渲染管线Render Pipeline
 
+本小节参考自：[Understanding URP: A Beginner-Friendly Guide to Render Passes & Renderer Features](https://discussions.unity.com/t/understanding-urp-a-beginner-friendly-guide-to-render-passes-renderer-features/1710336)。
+
 渲染管线定义了将3D场景转换为最终屏幕图像的**操作结构**和**执行顺序**。它编排、决定了如下要素：
 
 - 排序规则：物体以何种顺序渲染；
@@ -2986,62 +2988,363 @@ public class AssetBundleRefCounter
 
 - 可编程帧结构Programmable Frame Structure(SRP)
 
-  Unity引擎不再仅仅局限于开放可编程的着色器，而是允许开发者在C#层定义帧结构。
+  - Unity引擎不再仅仅局限于开放可编程的着色器，而是允许开发者在C#层定义**帧结构**(Frame Structure)。
 
-  SRP的核心在于，将渲染管线的**架构控制权**从引擎内部(固定的C++代码)移交给了开发者(用C#脚本编写)。这实现了从"在固定流水线上工作"到“**自己设计并组装流水线**”的质变。
+  - SRP的核心在于，将渲染管线的**架构控制权**从引擎内部(固定的C++代码)移交给了开发者(用C#脚本编写)，这实现了从"在固定流水线上工作"到“**自己设计并组装流水线**”的质变。
+  
+  - URP是SRP的一个实现，其定义了一个完整的渲染架构。
+  
+    URP暴露了结构化的拓展节点(Render Feature)，让开发者可以在其预设的架构中添加自定义的渲染步骤。当然，开发者可以使用SRP的API去自定义URP的架构。
 
-## 基础概念
+### URP是管线驱动的Pipeline
 
-- 
+URP是管线驱动，而非着色器驱动。
 
-### Drall Call && SetPass Call
+- **BiRP**：渲染流程在很大程度上由**着色器内部定义**(例如，通过`SubShader`中的多个`Pass`)。
 
-- 概要
+  管线是相对固定和被动的执行者。
 
-  | 特性     | Drall Call                             | SetPass Call                                                 |
-  | -------- | -------------------------------------- | ------------------------------------------------------------ |
-  | 目的     | 绘制网格                               | 设置渲染状态(Set Render Pass)                                |
-  | 开销     | 相对较小                               | 相对较大                                                     |
-  | 触发条件 | 每次绘制网格<br />SetPass Call之后执行 | 每次切换渲染状态，如着色器、纹理绑定、材质属性、混合模式、深度测试等<br />在Draw Call之前执行 |
-  | 优化目标 | 减少数量                               | 减少数量                                                     |
+- **URP**：渲染流程完全由管线定义和驱动。管线预先规划好一系列的`Render Pass`，并明确指定每个通道的任务。着色器变成了被管线调用的、功能单一的“工具”。
 
-- 批处理
+- **LightMode**标签系统：URP通过一套**标签系统**来建立管线与着色器之间的联系。
 
-  如果多个Draw Call使用**相同的渲染状态**，那么一个SetPass Call后可以跟随多个Draw Call：这就是批处理Batching的基本原理。
+  每个`Render Pass`会声明一个`ShaderTagId`，如`UniversalForward`、`UniversalForwardOnly`、`ShadowCaster`、`DepthOnly`等。然后去场景中收集所有带有**匹配**`LightMode`标签的着色器通道的物体进行绘制。
 
-  如果渲染状态不变(即没有发生SetPass Call)，连续多个Draw Call的开销会小很多。
+#### BiRP vs URP 多Pass对比
 
-- 减少SetPass Call
+现通过一个“基础着色 + 边缘光”双通道案例，展示了URP与内置管线在执行模型上的根本差异及其性能影响。
 
-  - **合并材质**：尽可能让多个物体共享同一个材质。
-  - **使用纹理图集**：将多个纹理合并到一张大纹理上，从而减少材质数量。
-  - **减少着色器变体**：避免使用过多的Shader变体，因为每个变体都可能导致额外的SetPass Call。
+##### BiRP风格的着色器
 
-- 减少Drall Call
+```glsl
+SubShader
+{
+    Pass
+    {
+        Name "BaseOpaque"
+        // 基础着色
+    }
 
-  - **静态批处理**：对于不会移动的物体，标记为Static，Unity会自动合并。
-  - **动态批处理**：对于小网格且使用相同材质的物体，Unity会在每帧动态合并(注意顶点数限制)。
-  - **GPU Instancing**：对于相同网格和材质的物体，使用GPU实例化。
+    Pass
+    {
+        Name "RimLight"
+        Blend One One
+        // 加法边缘光着色
+    }
+}
+```
 
-### 性能瓶颈SetPass Call
+在内置渲染管线中，每个物体通常会**执行完其所有通道**后，再移动到下一个物体：
 
-如下图所示，绘制一个蓝色和红色三角形，由于它们的渲染参数不一样。
+```c#
+物体A
+  SetPass(Base)  // 设置基础通道状态
+  绘制
+  SetPass(Rim)   // 切换到边缘光通道状态
+  绘制
 
-所以首先要执行SetPass Call设置渲染状态，再执行Drall Call绘制。**真正的性能瓶颈在SetPass Call**，而非Draw Call。
+物体B
+  SetPass(Base)  // 再次切换回基础通道状态！
+  绘制
+  SetPass(Rim)   // 再次切换到边缘光通道状态
+  绘制
+```
 
-<img src="/pic_setpasscall.png" alt="pic_setpasscall" style="zoom:50%;" />
+这里，每次`SetPass`都会调用**额外的CPU**工作来绑定不同的着色器程序和更新GPU管线状态。
 
-### Build-In管线多Pass的影响
+它引入了额外的状态切换开销，且开销会随着**通道数量 × 物体数量**而增加。
 
-假设场景中两个白色立方体，两个红色立方体，会产生2个SetPass Call，4个Drall Call：
+##### URP风格着色器
 
-<img src="/pic_build-in_multiple_pass_1.png" alt="pic_build-in_multiple_pass_1" style="zoom:67%;" />
+```glsl
+SubShader
+{
+    Pass
+    {
+        Name "Base"
+        Tags { "LightMode"="UniversalForward" }
+        // 基础着色
+    }
 
-若给每个立方体新增一个pass绘制描边，那么则会产生8个SetPass Call，8个Draw Call：
+    Pass
+    {
+        Name "RimLight"
+        Tags { "LightMode"="MyRimLightStage" } // 自定义标签
+        Blend One One
+        // 边缘光着色
+    }
+}
+```
 
-<img src="/pic_build-in_multiple_pass_2.png" alt="pic_build-in_multiple_pass_2" style="zoom:70%;" />
+乍一看，这似乎是等价的。然而，URP**不会**按顺序遍历这些通道。
 
-**这就是URP把处理多Pass干掉的原因**。类似需求通过定制Render Feature实现，从而优化游戏性能。
+URP不是“渲染一个物体的所有通道”，而是将帧渲染视为一系列**管线阶段**。
+
+每个阶段通过`LightMode`/`ShaderTagId`选择一个通道，并**一次性绘制所有匹配的物体**：
+
+```c#
+正向不透明阶段 (ShaderTagId = UniversalForward)
+  SetPass(Base)  // 设置基础通道状态
+    绘制 A
+    绘制 B  // 相同状态下连续绘制
+
+自定义边缘光阶段 (ShaderTagId = MyRimLightStage)
+  SetPass(RimLight)  // 设置边缘光通道状态
+    绘制 A
+    绘制 B  // 相同状态下连续绘制
+```
+
+这意味着**更少的通道/程序切换**，并且这种渲染顺序与SRP的批处理理念(以及SRP Batcher的设计目标)**更加兼容**。
+
+##### Drall Call && SetPass Call
+
+| 特性     | Drall Call                                                   | SetPass Call                                                 |
+| -------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 目的     | 绘制网格                                                     | 设置渲染状态(Set Render Pass)                                |
+| 开销     | 相对较小                                                     | 相对较大，CPU上切换渲染状态的开销                            |
+| 触发条件 | 每次绘制网格<br />SetPass Call之后执行                       | 每次切换渲染状态，如着色器、纹理绑定、材质属性、混合模式、深度测试等<br />在Draw Call之前执行 |
+| 优化目标 | **静态批处理**：对于不会移动的物体，标记为Static，Unity会自动合并。<br />**动态批处理**：对于小网格且使用相同材质的物体，Unity会在每帧动态合并(注意顶点数限制)。<br />**GPU Instancing**：对于相同网格和材质的物体，使用GPU实例化。 | **合并材质**：尽可能让多个物体共享同一个材质<br />**使用纹理图集**：将多个纹理合并到一张大纹理上，从而减少材质数量；<br />**减少着色器变体**：避免使用过多Shader变体，因为每个变体都可能导致额外的SetPass Call。 |
+
+**Batching基本原理**：如果多个Draw Call使用**相同的渲染状态**，那么一个SetPass Call后可以跟随多个Draw Call。这种情况下连续多个Draw Call的开销会小很多。
+
+#### URP中实现多shader pass渲染
+
+URP存在一个**重要限制**：**render pass在一个物体上只会执行第一个匹配的shader pass**。因此，要实现BiRP中的多Pass渲染，只能按如下两种方案：
+
+- **单通道整合**：将额外效果(如边缘光)的代码合并到主通道的片元着色器中。这是**性能最优、最符合URP批处理理念**的做法。
+
+- **多通道分离**：通过**渲染器特性**创建一个新的render pass，为该通道声明一个独特的`ShaderTagId`（如`MyRimLightStage`）来专门调用你的第二个着色器通道。
+
+  这提供了灵活性，但会引入额外的绘制调用和状态切换。
+
+#### URP的渲染顺序
+
+- 首先，render pass定义高阶顺序，通道顺序是固定的、高级别的框架。
+- 其次，`Sorting Order`、`Render Queue`等属性控制**同一个render pass内部**物体的相对排序。
+
+综上，这再次强化了URP的设计哲学——渲染的掌控权在**管线**手中。
+
+渲染的**全局时序**由一系列**渲染通道**的执行顺序预先定义，通道顺序是固定的、高级别的框架。试图用单个物体的低级排序属性去“覆盖”或“穿越”这个高级框架是无效的。
+
+## RenderFeature绘制轮廓示例
+
+本小节参考自：[Understanding URP: Implementing Renderer Features with Render Graph](https://discussions.unity.com/t/understanding-urp-implementing-renderer-features-with-render-graph/1712280)。
+
+- **RenderFeature**：① 暴露设置参数；② 创建RenderPass；③ 将RenderPass注入到Render中。
+- **RenderPass**：执行实际的渲染工作。
+
+```c#
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+
+public class ObjectOutlineRendererFeature : ScriptableRendererFeature
+{
+    // 定义在inspector中暴露的参数
+    [System.Serializable]
+    public class Settings
+    {
+        public LayerMask layerMask;
+        public Color outlineColor = Color.white;
+        public float outlineThickness = 0.05f;
+        public RenderPassEvent passEvent = RenderPassEvent.AfterRenderingOpaques;
+    }
+
+    public Settings settings = new Settings();
+
+    ObjectOutlineRenderPass m_Pass;
+
+    // render初始化时会调用RenderFeature的Create()
+    public override void Create()
+    {
+        m_Pass = new ObjectOutlineRenderPass(settings);
+    }
+
+    // URP构建pipeline的时候, 会每帧调用。此时RenderFeature应该注入其自定义的渲染阶段。
+    // renderingData: 包含当前帧和相机的上下文信息, 如:
+    // 1.当前使用的相机; 
+    // 2.场景裁剪的结果; 
+    // 3.光照和阴影信息; 
+    // 4.renderer配置信息
+    public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
+    {
+        renderer.EnqueuePass(m_Pass);
+    }
+}
+```
+
+自定义RenderPass：
+
+```c#
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+using UnityEngine.Rendering.RenderGraphModule;
+
+public class ObjectOutlineRenderPass : ScriptableRenderPass
+{
+    ObjectOutlineRendererFeature.Settings settings;
+    Material outlineMaterial;
+
+    static readonly int OutlineColorId =
+        Shader.PropertyToID("_OutlineColor");
+
+    static readonly int OutlineThicknessId =
+        Shader.PropertyToID("_OutlineThickness");
+
+    public ObjectOutlineRenderPass(
+        ObjectOutlineRendererFeature.Settings settings)
+    {
+        this.settings = settings;
+        renderPassEvent = settings.passEvent;
+        // 找到自定义的shader, 并创建材质
+        var shader = Shader.Find("Hidden/ObjectOutline");
+        outlineMaterial = new Material(shader);
+    }
+
+    // PassData包含的信息会被传给RenderGraph
+    class PassData
+    {        
+        public RendererListHandle rendererList;//包含待绘制物体的RendererList
+        public Material material;//用于渲染轮廓的材质
+        public Color color;//轮廓的颜色
+        public float thickness;//轮廓的厚度
+    }
+
+    // URP使用RenderGraph来组织渲染, 其作用如下:
+    // 1.告诉URP哪些物体需要被绘制; 
+    // 2.哪些buffer会被写入; 
+    // 3.当render pass运行时, 应该执行哪些gpu指令
+    public override void RecordRenderGraph(RenderGraph renderGraph, 
+                                           ContextContainer frameData)
+    {
+        // renderingData包含渲染相关的数据,比如场景剔除的结果
+        var renderingData = frameData.Get<UniversalRenderingData>();
+        // 当前相机的信息
+        var cameraData = frameData.Get<UniversalCameraData>();
+        // 当前URP使用的render target和其他资源, 如相机的颜色缓冲, 深度缓冲
+        var resourceData = frameData.Get<UniversalResourceData>();
+        
+        // 指明物体被绘制的顺序, CommonOpaque使物体应用标准的不透明物体的排序规则
+        var sortingSettings = new SortingSettings(cameraData.camera) { 
+            criteria = SortingCriteria.CommonOpaque 
+        };
+        
+        // urp中, renderpass不会遍历所有场景对象, 它只会选择材质中shader pass的light mode与其匹配的对象。        
+        var drawingSettings =
+            new DrawingSettings(new ShaderTagId("UniversalForward"), sortingSettings)
+        {
+            overrideMaterial = outlineMaterial// material指明对象如何被渲染
+        };
+       	
+        // 过滤设置, 指明哪些对象会被当前render pass考虑
+        var filteringSettings = new FilteringSettings(RenderQueueRange.opaque, settings.layerMask);
+
+        var rendererListParams = new RendererListParams(renderingData.cullResults, 
+                                                        drawingSettings,
+                                                        filteringSettings);
+        
+		// ------------------- 构建渲染指令 --------------------------
+        var rendererList = renderGraph.CreateRendererList(rendererListParams);
+		
+        // ------------------- 下述代码在RenderGraph中描述pass -----------------------
+        
+        // 向render graph中构建一个光栅化render pass(顶点着色->光栅化->片元着色)
+        // passData是自定义的数据结构, RenderGraph内部会创建PassData, 并返回其引用, 让开发者填充数据
+        // 最后pass执行时, PassData被作为函数参数供我们使用
+        using var builder = renderGraph.AddRasterRenderPass<PassData>("Object Outline Pass",
+                                                                      out var passData);
+        
+        // 填充RenderGraph执行时, 要使用的数据
+        passData.rendererList = rendererList;
+        passData.material = outlineMaterial;
+        passData.color = settings.outlineColor;
+        passData.thickness = settings.outlineThickness;
+        
+        //告诉Render Graph该Pass(RasterRenderPass)渲染时会执行的指令
+        builder.UseRendererList(rendererList);
+        builder.SetRenderAttachment(resourceData.cameraColor, 0, AccessFlags.Write);
+        builder.SetRenderAttachmentDepth(resourceData.cameraDepth, AccessFlags.Write);
+
+        // 定义了RenderGraph执行该Pass时, 需要执行的函数
+        builder.SetRenderFunc((PassData data, RasterGraphContext context) =>
+        {
+            data.material.SetColor(OutlineColorId, data.color);
+            data.material.SetFloat(OutlineThicknessId, data.thickness);
+			//  where the stage finally performs real rendering work.
+            context.cmd.DrawRendererList(data.rendererList);
+        });
+    }
+}
+```
+
+自定义绘制轮廓的着色器：
+
+```glsl
+// Hidden表示其不能再inspector中被选择, 只能通过代码构建
+Shader "Hidden/ObjectOutline"
+{
+    Properties
+    {
+        _OutlineColor("Outline Color", Color) = (1,1,1,1)
+        _OutlineThickness("Outline Thickness", Float) = 0.05
+    }
+
+    SubShader
+    {
+        Tags { "RenderPipeline"="UniversalPipeline" }
+
+        Pass
+        {
+            Name "Outline"
+
+            Cull Front
+            ZTest LEqual
+            ZWrite On   // Required so later stages (e.g., Skybox) respect outline depth
+
+            HLSLPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            CBUFFER_START(UnityPerMaterial)
+                float4 _OutlineColor;
+                float  _OutlineThickness;
+            CBUFFER_END
+
+            struct Attributes
+            {
+                float4 positionOS : POSITION;
+                float3 normalOS   : NORMAL;
+            };
+
+            struct Varyings
+            {
+                float4 positionCS : SV_POSITION;
+            };
+
+            Varyings vert(Attributes input)
+            {
+                Varyings output;
+                float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
+                float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
+                positionWS += normalWS * _OutlineThickness;
+                output.positionCS = TransformWorldToHClip(positionWS);
+
+                return output;
+            }
+
+            half4 frag(Varyings input) : SV_Target
+            {
+                return _OutlineColor;
+            }
+
+            ENDHLSL
+        }
+    }
+}
+```
 
 ## SRP Batcher
 

@@ -4035,6 +4035,58 @@ GPU与其存储系统之间(主要是**显存**)的数据传输速率，衡量�
 计算：384位 × 21 Gbps × 2 ÷ 8位/字节 = 1008 GB/s
 ```
 
+# 渲染&&计算
+
+## 计算着色器
+
+### 1 不同类型的数据缓冲区
+
+#### 1.1 Default(structured)
+
+CPU 必须预先填充所有元素，或者 ComputeShader 按照固定索引写入(每个线程写固定位置)。
+
+实际使用的元素数量等于缓冲区长度，CPU 完全知道有多少有效数据。
+
+#### 1.2 Append
+
+在 ComputeShader 执行过程中，允许每个线程追加数据到缓冲区末尾(不能超过缓冲区大小)，无需预先知道最终会有多少数据。
+
+在ComputeShader执行过程填充数据，同时在GPU下一阶段中被使用，**避免了CPU回读数据的开销**。
+
+```c#
+var buffer = new ComputeBuffer(resolution * resolution, sizeof(float) * 3, ComputeBufferType.Append);
+buffer.SetCounterValue(0);
+```
+
+| Property                                                     | Description                                                  |
+| :----------------------------------------------------------- | :----------------------------------------------------------- |
+| [count](https://docs.unity3d.com/6000.6/Documentation/ScriptReference/ComputeBuffer-count.html) | Number of elements in the buffer (Read Only). `示例中的resolution * resolution` |
+| [stride](https://docs.unity3d.com/6000.6/Documentation/ScriptReference/ComputeBuffer-stride.html) | Size of one element in the buffer in bytes (Read Only).`示例中的sizeof(float) * 3` |
+| size                                                         | count  * stride                                              |
+| Append                                                       | 表示该缓冲区支持在GPU中预先分配。内容可在GPU中动态填充、追加。<br />在ComputeShader中对应的类型是`AppendStructuredBuffer<T>`。<br />调用 `Append(value)` 时，GPU 会自动在计数器指向的位置写入数据，并将计数器加 1(原子操作，线程安全) |
+| SetCounterValue                                              | 设置缓冲区内部计数器，有效范围是0 - n-1。<br />SetCounterValue(0)表示从缓冲区的头部开始追加数据。 |
+| 典型应用                                                     | 与 `ComputeBuffer.CopyCount` 配合，将数量传递给 IndirectArguments |
+
+#### 1.3 IndirectArguments和GPU驱动渲染
+
+在 Unity 中，`Graphics.DrawProceduralIndirect` 是一种**间接绘制**（Indirect Draw）方法。
+
+它的核心思想是：**绘制所需的参数(例如要绘制多少个实例、从哪个顶点开始等)不再由 CPU 直接指定，而是存储在 GPU 的一块缓冲区中，由 GPU 自己读取这些参数来执行绘制。**
+
+|                                       | CPU驱动                                                      | GPU驱动                                                      |
+| ------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| DrawMeshInstanced<br />DrawProcedural | CPU需要告诉GPU:<br />要绘制多少个实例；<br />使用哪些顶点数据；<br />从哪个偏移开始。 | GPU内存中准备一个特殊的缓冲区(IndirectArguments)，里面存好绘制参数(实例数量、索引数量等)<br />缓冲区由GPU自己填充<br />CPU只需要调用一次`DrawProceduralIndirect`，告诉GPU从那个缓冲区读取参数，按参数绘制。 |
+|                                       |                                                              | 大大减少CPU - GPU之间的同步开销，充分利用GPU并行性。         |
+
+该缓冲区作为 GPU 驱动渲染(**Indirect Draw**)的参数来源。
+
+渲染时 GPU 直接从该缓冲区读取参数，无需 CPU 参与设置绘制调用的具体数据(如实例数量)。
+
+```c#
+var argsBuffer = new ComputeBuffer(1, sizeof(int) * 5, ComputeBufferType.IndirectArguments);
+argsBuffer.SetData(new int[] { triangles.length, 0, 0, 0, 0 });
+```
+
 # 并发 && 异步
 
 ## JobSystem && Burst

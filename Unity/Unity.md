@@ -4041,11 +4041,38 @@ GPU与其存储系统之间(主要是**显存**)的数据传输速率，衡量�
 
 ### 1 不同类型的数据缓冲区
 
-#### 1.1 Default(structured)
+#### 1.1 Default(Structured)
 
-CPU 必须预先填充所有元素，或者 ComputeShader 按照固定索引写入(每个线程写固定位置)。
+`StructuredBuffer` 是 GPU 上的一种**结构化缓冲区**，在 ComputeShader 中表现为一个**可随机访问的只读数组**。
 
-实际使用的元素数量等于缓冲区长度，CPU 完全知道有多少有效数据。
+允许每个线程读取任意位置的元素，常用于传递需要在 GPU 中频繁查询的数据（如顶点数据、查找表、实例属性等）。
+
+- **只读数据存储**：在 ComputeShader 中声明为 `StructuredBuffer<T>`，所有线程都可以读取其中的元素，但不能修改。适合存放不需要被 ComputeShader 改动的输入数据。
+- **随机访问**：与普通数组类似，可以使用索引 `buffer[index]` 直接访问任意元素，不需要按顺序遍历。
+- **跨阶段共享**：不仅可以在 ComputeShader 中使用，还可以绑定到材质（`material.SetBuffer`），供顶点/片元着色器读取，常用于 GPU 实例化、程序化几何生成等。
+
+典型示例：
+
+```c#
+// 创建只读结构化缓冲区（默认类型就是 StructuredBuffer）
+ComputeBuffer buffer = new ComputeBuffer(count, sizeof(float) * 3);
+buffer.SetData(myVector3Array); // CPU 填充数据
+
+// 绑定到 ComputeShader
+computeShader.SetBuffer(kernelIndex, "_MyBuffer", buffer);
+
+// 绑定到材质，供渲染使用
+material.SetBuffer("_MyBuffer", buffer);
+
+// compute shade中
+StructuredBuffer<float3> _MyBuffer;
+[numthreads(64,1,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    float3 data = _MyBuffer[id.x]; // 随机读取任意元素
+    // ... 进行计算，但不能修改 _MyBuffer
+}
+```
 
 #### 1.2 Append
 
@@ -4054,38 +4081,99 @@ CPU 必须预先填充所有元素，或者 ComputeShader 按照固定索引写�
 在ComputeShader执行过程填充数据，同时在GPU下一阶段中被使用，**避免了CPU回读数据的开销**。
 
 ```c#
-var buffer = new ComputeBuffer(resolution * resolution, sizeof(float) * 3, ComputeBufferType.Append);
-buffer.SetCounterValue(0);
+var appendBuffer = new ComputeBuffer(resolution*resolution, sizeof(float) * 3, ComputeBufferType.Append);
+appendBuffer.SetCounterValue(0);
 ```
 
-| Property                                                     | Description                                                  |
-| :----------------------------------------------------------- | :----------------------------------------------------------- |
-| [count](https://docs.unity3d.com/6000.6/Documentation/ScriptReference/ComputeBuffer-count.html) | Number of elements in the buffer (Read Only). `示例中的resolution * resolution` |
-| [stride](https://docs.unity3d.com/6000.6/Documentation/ScriptReference/ComputeBuffer-stride.html) | Size of one element in the buffer in bytes (Read Only).`示例中的sizeof(float) * 3` |
-| size                                                         | count  * stride                                              |
-| Append                                                       | 表示该缓冲区支持在GPU中预先分配。内容可在GPU中动态填充、追加。<br />在ComputeShader中对应的类型是`AppendStructuredBuffer<T>`。<br />调用 `Append(value)` 时，GPU 会自动在计数器指向的位置写入数据，并将计数器加 1(原子操作，线程安全) |
-| SetCounterValue                                              | 设置缓冲区内部计数器，有效范围是0 - n-1。<br />SetCounterValue(0)表示从缓冲区的头部开始追加数据。 |
-| 典型应用                                                     | 与 `ComputeBuffer.CopyCount` 配合，将数量传递给 IndirectArguments |
+| Property        | Description                                                  |
+| :-------------- | :----------------------------------------------------------- |
+| count           | Number of elements in the buffer (Read Only). `示例中的resolution * resolution` |
+| stride          | Size of one element in the buffer in bytes (Read Only).`示例中的sizeof(float) * 3` |
+| size            | count  * stride                                              |
+| Append          | 表示该缓冲区支持在GPU中预先分配。内容可在GPU中动态填充、追加。<br />在ComputeShader中对应的类型是`AppendStructuredBuffer<T>`。<br />调用 `Append(value)` 时，GPU 会自动在计数器指向的位置写入数据，并将计数器加 1(原子操作，线程安全) |
+| SetCounterValue | 设置缓冲区内部计数器，有效范围是0 - n-1。<br />SetCounterValue(0)表示从缓冲区的头部开始追加数据。 |
+| 典型应用        | 与 `ComputeBuffer.CopyCount` 配合，将数量传递给 IndirectArguments |
 
 #### 1.3 IndirectArguments和GPU驱动渲染
 
-在 Unity 中，`Graphics.DrawProceduralIndirect` 是一种**间接绘制**（Indirect Draw）方法。
+- Indirect Draw
 
-它的核心思想是：**绘制所需的参数(例如要绘制多少个实例、从哪个顶点开始等)不再由 CPU 直接指定，而是存储在 GPU 的一块缓冲区中，由 GPU 自己读取这些参数来执行绘制。**
+  Unity 中，`Graphics.DrawProceduralIndirect` 是一种**间接绘制**（Indirect Draw）方法。
 
-|                                       | CPU驱动                                                      | GPU驱动                                                      |
-| ------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| DrawMeshInstanced<br />DrawProcedural | CPU需要告诉GPU:<br />要绘制多少个实例；<br />使用哪些顶点数据；<br />从哪个偏移开始。 | GPU内存中准备一个特殊的缓冲区(IndirectArguments)，里面存好绘制参数(实例数量、索引数量等)<br />缓冲区由GPU自己填充<br />CPU只需要调用一次`DrawProceduralIndirect`，告诉GPU从那个缓冲区读取参数，按参数绘制。 |
-|                                       |                                                              | 大大减少CPU - GPU之间的同步开销，充分利用GPU并行性。         |
+  其核心是：**绘制所需的参数(实例数量、起始等)不再由 CPU 直接指定，而是存储在 GPU 缓冲区中，由 GPU 自己读取这些参数来执行绘制。**
 
-该缓冲区作为 GPU 驱动渲染(**Indirect Draw**)的参数来源。
+  |             | 执行函数                          | 意义                                                         | 优势                                             |
+  | ----------- | --------------------------------- | ------------------------------------------------------------ | ------------------------------------------------ |
+  | **CPU驱动** | DrawMeshInstanced、DrawProcedural | CPU告诉GPU要绘制多少实例、使用哪些顶点                       |                                                  |
+  | **GPU驱动** | DrawProceduralIndirect            | GPU内存中准备一个参数缓冲区(实例数量、索引数等)<br />CPU只需一次调用，告诉GPU从哪个缓冲区取参数，如何绘制 | 减少CPU - GPU之间的同步开销，充分利用GPU并行性。 |
 
-渲染时 GPU 直接从该缓冲区读取参数，无需 CPU 参与设置绘制调用的具体数据(如实例数量)。
+- 间接参数缓冲区的意义
 
-```c#
-var argsBuffer = new ComputeBuffer(1, sizeof(int) * 5, ComputeBufferType.IndirectArguments);
-argsBuffer.SetData(new int[] { triangles.length, 0, 0, 0, 0 });
-```
+  - **间接参数缓冲区是供 GPU 命令处理器使用的**，它在渲染管线的早期阶段被读取，用来决定启动多少个实例和顶点。
+  - **着色器运行在实例化绘制过程中**，每个实例执行一次顶点/片元着色器，着色器只需要通过 `SV_InstanceID` 获取当前实例索引，然后从其他绑定的缓冲区读取该实例的数据，而无需知道总实例数或索引数等命令参数。
+  - 渲染时 GPU 直接从该缓冲区读取参数，无需 CPU 参与设置绘制调用的具体数据。
+
+- 使用示例
+
+  ```c#
+  // 构造
+  var argsBuffer = new ComputeBuffer(1, sizeof(int) * 5, ComputeBufferType.IndirectArguments);
+  
+  // 设置数据
+  argsBuffer.SetData(new int[] { triangles.length, 0, 0, 0, 0 });
+  
+  // 将前述ComputeBufferType.Append类型缓冲区的元素数量拷贝到argsBuffer的第二个int的位置
+  ComputeBuffer.CopyCount(appendBuffer, argsBuffer, sizeof(int));
+  
+  // 调用Indirect draw, GPU中会使用argsBuffer中的参数
+  // 该材质中的shader必须支持程序实例化
+  Graphics.DrawProceduralIndirect(material, bounds, MeshTopology.Triangles, 
+  		argsBuffer, 0, null, null, UnityEngine.Rendering.ShadowCastingMode.Off, true, 
+          gameObject.layer);
+  ```
+
+- 数据结构
+
+  `argsBuffer.SetData`设置buffer的数据结构，buffer 的数据结构**是由所使用的间接绘制 API 定义的**，而不是由着色器或用户随意决定。
+
+  在unity中，对于`MeshTopology.Triangles`(三角形拓扑)，间接参数缓冲区中的**每组参数**包含**5个连续的32位整数**，依次为：
+
+  - **index count per instance** – 每个实例要绘制的索引数量(即基础网格的三角形索引总数)。
+  - **instance count** – 要绘制的实例总数。
+  - **start index location** – 索引缓冲区中的起始偏移(通常为 0)。
+  - **base vertex location** – 基础顶点偏移(通常为 0)。
+  - **start instance location** – 起始实例偏移(通常为 0)。
+
+- 数据结构的一致性
+
+  - **实例数量**：命令处理器根据 `instance count` 决定调用多少次实例化渲染，每次调用都会向顶点着色器传递一个递增的 `SV_InstanceID`。
+
+  - **索引数量**：顶点着色器通过 `SV_VertexID` 和绑定的三角形索引缓冲区知道每个顶点属于哪个三角形，进而正确构建几何。
+    一般需通过 `SV_VertexID` 去索引缓冲区中获取当前顶点正确索引`idx`。然后通过`idx`在其他数据缓冲区获取对应顶点的数据。
+
+    ```glsl
+    // ......
+    StructuredBuffer<int> Triangles;
+    StructuredBuffer<float4> Colors;
+    StructuredBuffer<float2> Uvs;
+    
+    // ......
+    struct Attributes
+    {
+    	uint vertexID : SV_VertexID;
+    	uint instanceID : SV_InstanceID;
+    };
+    // ......
+    Varyings vert(Attributes IN)
+    {
+        // ......
+        // 获取当前顶点的索引
+        int positionIndex = Triangles[IN.vertexID];
+        // 根据索引获取当前顶点的数据
+        float4 vertColor = Colors[positionIndex];
+        float2 uv = Uvs[positionIndex];
+    }
+    ```
 
 # 并发 && 异步
 

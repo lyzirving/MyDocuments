@@ -3949,6 +3949,224 @@ GC通过一定的算法找到“垃圾”，并且自动将“垃圾”占用的
 
 ### 手动合并模型
 
+## shader变体
+
+在 Unity 中，Shader 变体(Shader Variant)是指**同一份 Shader 源码，根据不同的宏定义组合，编译出多个可独立运行的版本**。这些版本在功能上略有差异，例如是否开启阴影、是否使用透明度测试等。
+
+变体的产生机制与 `#pragma multi_compile` 和 `#pragma shader_feature` 紧密相关。
+
+### 变体产生机制
+
+```glsl
+#pragma multi_compile _ _ENABLE_FOG
+#pragma multi_compile _ _ENABLE_NORMALMAP
+```
+
+这里每一行 `multi_compile` 都定义了**一组互斥的选项**：
+
+- `_ENABLE_FOG`：可以是关闭（空关键字 `_`）或开启（`_ENABLE_FOG`）。
+- `_ENABLE_NORMALMAP`：可以是关闭（空关键字 `_`）或开启（`_ENABLE_NORMALMAP`）。
+
+那么所有可能的组合就是：
+
+| 雾效 | 法线贴图 | 变体名称（示例）                |
+| :--- | :------- | :------------------------------ |
+| 关   | 关       | (无关键字)                      |
+| 关   | 开       | `_ENABLE_NORMALMAP`             |
+| 开   | 关       | `_ENABLE_FOG`                   |
+| 开   | 开       | `_ENABLE_FOG _ENABLE_NORMALMAP` |
+
+这 4 个组合就是 4 个 **Shader 变体**。每个变体都是一段编译好的 GPU 程序，拥有独立的代码路径。
+
+### `multi_compile` 和 `shader_feature`
+
+- multi_compile：所有组合都生成，无论你是否使用
+
+  - 它会把**所有可能的组合全部编译并打包**到游戏里。
+  - 即使你的场景中没有任何材质使用某个组合，那个变体依然存在。
+  - 好处是：运行时可以随时通过脚本启用/禁用任意关键字组合，不会缺少变体。
+  - 坏处是：包体和内存会变大，启动加载也可能变慢。
+
+- shader_feature：只产生实际用到的组合
+
+  - 允许你在**材质 Inspector** 上勾选某个功能开关（例如“启用透明度测试”）。
+  - 在构建时，Unity 会扫描项目中的所有材质，记录哪些关键字被实际使用，**只打包那些被用到的变体**，未使用的组合会被舍弃。
+  - 好处是：显著减少变体数量，降低包体和内存。
+  - 坏处是：如果你试图在运行时用脚本启用一个从未被材质用过的关键字，就会找不到对应的变体，导致渲染异常或回退。
+
+- 选择策略
+
+  | 类型             | 适用场景                                                     | 优点                       | 缺点                         |
+  | :--------------- | :----------------------------------------------------------- | :------------------------- | :--------------------------- |
+  | `multi_compile`  | 引擎级功能，如主阴影、额外灯光模式，这些功能可能在运行时动态切换，无法预知哪个材质用哪个组合 | 运行时切换安全，不会丢变体 | 变体数量多，包体大           |
+  | `shader_feature` | 材质属性，如透明度测试、法线贴图开关，在编辑时就能确定每个材质是否启用 | 精确控制，减少变体数量     | 运行时不能启用未用过的关键字 |
+
+- 实例解析
+
+  ```glsl
+  #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
+  #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS_PIXEL
+  #pragma shader_feature _ALPHATEST_ON
+  ```
+
+  - 前两行 `multi_compile` 提供了 **主阴影** 和 **附加灯光模式** 的所有组合。即使项目里某些材质根本不投射阴影，这些变体也会存在。
+  - 第三行 `shader_feature` 提供了 **透明度测试** 的开关。只有那些在材质上勾选了“Alpha Test”的材质才会让它生成对应变体，否则这个变体不会被打包。
+
+  因此，这三行代码最终生成的变体总数 = `2 × 3 × (使用AlphaTest的材质种数 > 0 ? 2 : 1)`。
+
+  如果没有任何材质用 AlphaTest，则只有 6 个变体；如果有材质用了，则为 12 个。
+
+### 变体的加载和卡顿
+
+Unity 在构建游戏时，会将 Shader 编译成很多变体。但**这些变体不会全部加载到内存中**，而是采用按需加载(Lazy Loading)的策略。
+
+当场景中某个物体第一次使用某个 Shader 变体时，Unity 需要从磁盘读取该变体，并在 GPU 上创建相应的程序。这个过程可能耗时数毫秒甚至数十毫秒，如果发生在游戏进行中，就会造成明显的**帧率卡顿（Hitch）**。
+
+#### WarmUp的作用
+
+为了解决这种运行时卡顿，Unity 允许开发者**提前指定哪些变体是需要用到的**，并在游戏启动或加载场景时一次性将它们全部加载到内存中。
+
+- **ShaderVariantCollection**：一个资源文件，里面记录了多个 Shader 以及每个 Shader 需要包含哪些关键字组合（即变体）。
+- **`WarmUp()`**：立即加载集合中所有声明的变体，确保它们已准备好，后续渲染时就不会再触发临时加载。
+
+```c#
+public class ShaderVariantWarmup : MonoBehaviour
+{
+    public ShaderVariantCollection variantCollection;
+
+    private void Start()
+    {
+        variantCollection?.WarmUp(); // 提前加载所有指定变体
+    }
+}
+```
+
+如上述，在进入游戏或切换场景前，只要调用了 WarmUp，这些变体就已经存在于内存中，避免了游戏中途的卡顿。
+
+但是手动维护ShaderVariantCollection极其繁琐：
+
+- 你需要在编辑器中手动添加 Shader，并为每个 Shader 勾选关键字组合。
+- 当项目中的材质、Shader 不断修改和增加时，很容易漏掉某些变体。
+- 如果项目有几十上百个 Shader，手动维护几乎不可能完成。
+
+#### 自动化收集管线
+
+更实际的方案是在**构建时自动生成 ShaderVariantCollection**，或者**直接根据项目实际使用情况裁剪变体**。
+
+常用的自动化方法包括：
+
+- **IPreprocessShaders 回调**：在 Unity 构建过程中，通过脚本遍历所有要编译的 Shader，分析项目中的材质和场景，自动提取用到的关键字组合，生成 ShaderVariantCollection 文件，或者直接过滤掉未使用的变体。
+
+- **配合预设的材质列表**：扫描所有材质和场景资源，记录下它们实际使用的关键字。
+
+- 收集可用变体清单：
+
+  ```c#
+  public class ShaderVariantCollector : IPreprocessShaders
+  {
+      public int callbackOrder => 0;
+  
+      // 收集到的变体
+      private static HashSet<string> collectedVariants = new HashSet<string>();
+      private static bool enabled = true;
+  
+      // 当 Unity 编译某个Shader的某个Pass时，会传入该Shader对象、Pass 类型、着色器阶段，
+      // 以及一个包含所有可能变体编译数据的列表 data。
+      public void OnProcessShader(Shader shader, ShaderSnippetData snippet,
+                                  IList<ShaderCompilerData> data)
+      {
+          if (!enabled) return;
+  
+          for (int i = data.Count - 1; i >= 0; i--)
+          {
+              var variant = data[i];
+              // 对每个变体，取其关键字集合 shaderKeywordSet，过滤掉未启用的关键字，
+              // 得到实际生效的关键字列表，并按字母排序
+              var keywords = variant.shaderKeywordSet.GetShaderKeywords()
+                  .Where(k => shader.IsKeywordEnabled(k))
+                  .Select(k => k.name)
+                  .OrderBy(k => k)
+                  .ToList();
+  
+              string key = $"{shader.name}:{snippet.passType}/{snippet.shaderType}({string.Join(",", keywords)})";
+              collectedVariants.Add(key);
+          }
+      }
+  
+      [MenuItem("Tools/Dump Shader Variants")]
+      public static void DumpVariants()
+      {
+          enabled = false; // 先停止采集，避免递归
+  
+          string path = "ShaderVariants.txt";
+          var lines = collectedVariants.OrderBy(v => v).ToList();
+          File.WriteAllLines(path, lines);
+  
+          Debug.Log($"Dumped {lines.Count} variants to {path}");
+  
+          enabled = true;
+      }
+  }
+  ```
+
+- 剔除不需要的变体示例：
+
+  ```c#
+  public class ShaderVariantStripper : IPreprocessShaders
+  {
+      public int callbackOrder => -100; // 优先执行
+  
+      // 定义了一个字典StripRules, 包含要剔除的关键字名称
+      private static readonly Dictionary<string, HashSet<string>> StripRules = new()
+      {
+          // string.Empty针对所有Shader的全局规则, 剔除包含如下关键字的变体
+          [string.Empty] = new() 
+          {
+              "LOD_FADE_CROSSFADE",
+              "_WRITE_RENDERING_LAYERS",
+              "_LIGHT_LAYERS",
+              "_RENDER_PASS_ENABLED",
+              "SCREEN_COORD_OVERRIDE",
+          },
+          // 对Lit shader, 剔除包含如下关键字的变体
+          ["Universal Render Pipeline/Lit"] = new()
+          {
+              "_ADDITIONAL_LIGHTS_VERTEX",
+              "_FORWARD_PLUS",
+          },
+          ["Universal Render Pipeline/Unlit"] = new()
+          {
+              // Unlit 不需要光照相关变体
+          },
+      };
+  
+      public void OnProcessShader(Shader shader, ShaderSnippetData snippet, IList<ShaderCompilerData> data)
+      {
+          var shaderName = shader.name;
+  
+          // 找出该 Shader 适用的剔除规则
+          var rules = new HashSet<string>();
+          if (StripRules.TryGetValue(string.Empty, out var globalRules))
+              rules.UnionWith(globalRules);
+          if (StripRules.TryGetValue(shaderName, out var shaderRules))
+              rules.UnionWith(shaderRules);
+  
+          if (rules.Count == 0) return;
+  
+          // 从 data 中移除匹配的变体
+          // 移除后，Unity 就不会编译这个变体，达到了剔除的目的。
+          for (int i = data.Count - 1; i >= 0; i--)
+          {
+              var keywords = data[i].shaderKeywordSet;
+              if (rules.Any(r => ShaderKeyword.IsKeywordEnabled(keywords, r)))
+              {
+                  data.RemoveAt(i);
+              }
+          }
+      }
+  }
+  ```
+
 # 渲染原理
 
 ## Early-Z GPU硬件优化技术

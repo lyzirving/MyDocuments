@@ -88,7 +88,18 @@
 
 - 头文件重复包含
 
-  使用#pragma once或头文件保护宏。
+  使用#pragma once或头文件保护宏(include guard)。
+
+  - #pragma once不是 C++ 标准的一部分，而是**预处理阶段**的一个优化机制，是编译器扩展，由主流编译器支持。其为每个**翻译单元(cpp文件)**维护了一个**包含文件集合**(included files set)，这个集合里的元素不是文件名，而是文件的**唯一标识**。
+
+  - include guard的原理就是宏：
+
+    ```c++
+    #ifndef FOO_H
+    #define FOO_H
+    // 头文件内容
+    #endif
+    ```
 
 - 依赖扩散问题
 
@@ -156,39 +167,15 @@ public:
 
 该问题有多个影响因素：
 
-- 若启动编译时链接，链接器会做全局符号合并；
+| 问题                   | 原因                                                        |
+| :--------------------- | :---------------------------------------------------------- |
+| 多个实例               | 每个 .so 和主程序各自实例化了函数局部静态变量               |
+| 为什么没合并           | 函数局部静态变量通常是**隐藏/受保护符号**，不参与跨模块插桩 |
+| 类上的 visibility 属性 | 不影响函数局部静态变量                                      |
+| 主程序未加 -rdynamic   | 主程序符号不导出，.so 无法引用                              |
+| 根本原因               | 单例的存储定义在头文件的内联函数里，被复制到每个模块        |
 
-  若libA和libB启用编译时链接，那么最后链接时，lib中依赖的Singleton会被合并。但由于main是dlopen的lib，因此仍然会存在两份实例；
-
-- 符号的可见性
-
-  gcc默认的符号可见性是`default`，即**全局可见**，同时**弱符号**可以合并；
-
-  ```c++
-  // default 默认可见性
-  class  __attribute__((visibility("default"))) Singleton
-  {
-  	//........
-  };
-  ```
-
-- 隐藏符号
-
-  把单例可见性修改为hidden，此时符号**不再导出**，链接器肯定无法跨模块合并。
-
-  这样每个库各自会生成一份实例：
-
-  ```c++
-  // Singleton.h
-  class  __attribute__((visibility("hidden"))) Singleton
-  {
-  	//........
-  };
-  ```
-
-- 最优解
-
-  把Singleton.h编译成一个独立的动态库，其他模块libA、libB、main去链接这个动态库。
+**结论：头文件内联函数中的函数局部静态变量，在跨共享库场景下不是全局唯一的。单例的实现应该放在一个 .cpp 中，而不是头文件的内联函数里。**
 
 # 模板
 
@@ -324,7 +311,7 @@ int main()
 }
 ```
 
-​	当模板函数参数是const T&，则：
+当模板函数参数是const T&，则：
 
 ①可以传递给它**任何类型的实参：**对象(const/非const)、临时对象、字面量常量；
 
@@ -617,10 +604,10 @@ int func1Addr = *((int *)*(int *)(&a) + 1);
 
 ## 3 对象模型
 
-- nonstatic 数据成员被置于每一个类对象中，static数据成员被置于类对象之外；
-- static与nonstatic函数被置于类对象之外；
-- virtual函数通过虚函数表+虚指针来支持；
-- **虚函数表前**设置了一个指向type_info的指针，用以支持**RTTI**。RTTI是为多态而生成的信息，包括对象继承关系，对象本身的描述等。
+- nonstatic 数据成员被置于每一个类对象中，static数据成员被置于类对象之外(**静态/全局区**)；
+- static与nonstatic函数被置于类对象之外(**代码区**)；
+- virtual函数通过虚函数表+虚指针来支持(**常量区**)；
+- **虚函数表前**设置了一个指向type_info的指针，用以支持**RTTI**(常量区)。RTTI是为多态而生成的信息，包括对象继承关系，对象本身的描述等。
 
 ### 1) 非继承下的对象模型
 
@@ -804,7 +791,7 @@ d.B2::ib = 1;  //正确
 
 ​	不含虚基表的情况：
 
-<img src="/pic/note_pic_vbptr1.png" alt="note_pic_vbptr1" style="zoom:80%;" />
+<img src="./pic/note_pic_vbptr1.png" alt="note_pic_vbptr1" style="zoom:80%;" />
 
 #### 5.1) 简单虚继承
 
@@ -4007,19 +3994,226 @@ std::lock(lk1, lk2);
 ​	SOLID 是一个首字母缩写，代表以下设计原则：
 
 - 单一责任原则（SRP，**Single Responsibility Principle**）
+
+  一个类应该只有一个引起它变化的原因，或更准确说：**一个模块、类或函数应该只对一个行为者负责。**
+
+  ```c++
+  struct User {
+      std::string username;
+      std::string password;
+  };
+  
+  // 违反 SRP：一个类同时负责校验、持久化、发邮件、记日志
+  class UserService {
+  public:
+      void registerUser(const std::string& username, const std::string& password) {
+          // 1. 校验
+          if (username.empty() || password.size() < 6) {
+              throw std::invalid_argument("参数不合法");
+          }
+  
+          // 2. 保存数据库（伪代码）
+          // db.save(User{username, password});
+  
+          // 3. 发送欢迎邮件
+          // email.send(username, "欢迎注册");
+  
+          // 4. 记录日志
+          // logger.info("用户注册：" + username);
+      }
+  };
+  
+  // 修改重构
+  class UserService {
+  public:
+      UserService(UserValidator& validator,
+                  UserRepository& repository,
+                  EmailService& emailService,
+                  Logger& logger)
+          : validator_(validator),
+            repository_(repository),
+            emailService_(emailService),
+            logger_(logger) {}
+  
+      void registerUser(const std::string& username, const std::string& password) {
+          validator_.validate(username, password);
+  
+          User user{username, password};
+          repository_.save(user);
+          emailService_.sendWelcome(user);
+          logger_.info("用户注册：" + username);
+      }
+  
+  private:
+      UserValidator& validator_;   //用户校验
+      UserRepository& repository_; //保存数据库
+      EmailService& emailService_; //发送邮件
+      Logger& logger_;             //记录日志   
+  };
+  ```
 - 开闭原则（OCP，**Open-closed Principle**）
 
-​	新增功能是可扩展的(可能在另一个编译单元中)，而不修改原始的类/函数(避免重新编译已经投入生产的内容)。
+  **软件实体（类、模块、函数等）应该对扩展开放，对修改关闭。**
+
+  - **对扩展开放**：当需求增加时，可以通过**添加新代码**来扩展功能。
+  - **对修改关闭**：尽量**不修改已有的、稳定的代码**。
+
+  核心思想是：**用抽象隔离变化**。把可能变化的部分抽象成接口或基类，新增功能时只添加新的实现类，而不去改动原来的调用逻辑。
+
+  ```c++
+  enum class NotifyType {
+      Email,
+      SMS
+  };
+  
+  // 违反开闭原则的实现
+  class NotificationService {
+  public:
+      void notify(NotifyType type, const std::string& user, const std::string& msg) {
+          if (type == NotifyType::Email) {
+              std::cout << "发送邮件给 " << user << ": " << msg << '\n';
+          } else if (type == NotifyType::SMS) {
+              std::cout << "发送短信给 " << user << ": " << msg << '\n';
+          }
+      }
+  };
+  
+  
+  // 修改重构, 添加接口
+  class Notifier {
+  public:
+      virtual ~Notifier() = default;
+      virtual void send(const std::string& user, const std::string& msg) = 0;
+  };
+  
+  // 邮件通知
+  class EmailNotifier : public Notifier {
+  public:
+      void send(const std::string& user, const std::string& msg) override {
+          std::cout << "发送邮件给 " << user << ": " << msg << '\n';
+      }
+  };
+  
+  // 短信通知
+  class SmsNotifier : public Notifier {
+  public:
+      void send(const std::string& user, const std::string& msg) override {
+          std::cout << "发送短信给 " << user << ": " << msg << '\n';
+      }
+  };
+  ```
 
 - 里氏替换原则（LSP，**Liskov Substitution Principle**）
 
-​	如果一个接口可以接受类型为 Parent 的对象，那么它应该同样地可以接受类型为 Child 的对象，而不会有任何破坏。
+  **子类型必须能够替换掉它们的基类型，而不会破坏程序的正确性。**
+
+  ```c++
+  class Shape {
+  public:
+      virtual ~Shape() = default;
+      virtual int area() const = 0;
+  };
+  
+  class Rectangle : public Shape {
+  public:
+      Rectangle(int w, int h) : width_(w), height_(h) {}
+  
+      int area() const override {
+          return width_ * height_;
+      }
+  
+  private:
+      int width_;
+      int height_;
+  };
+  
+  class Square : public Shape {
+  public:
+      explicit Square(int side) : side_(side) {}
+  
+      int area() const override {
+          return side_ * side_;
+      }
+  
+  private:
+      int side_;
+  };
+  ```
+
+  上述示例中，客户端只需要依赖Shape接口。
 
 - 接口隔离原则（ISP，**Interface Segregation Principle**）
 
-​	ISP建议将接口分开，以便于实现者可以根据需求进行接口选择和组合。
+  **客户端不应该被迫依赖它不使用的方法。**
+
+  更准确地说：**一个类对另一个类的依赖应该建立在最小的接口上。**
+  不要把很多不相关的方法塞进一个大接口，而应该拆成多个小而专注的接口，让客户端只依赖自己真正需要的方法。
 
 - 依赖注入原则（DIP，**Dependency Injection Principle**）
+
+  **高层模块不应该依赖低层模块，二者都应该依赖抽象。**
+
+  **抽象不应该依赖细节，细节应该依赖抽象。**
+
+  通俗理解：
+
+  - 高层业务逻辑不要直接依赖具体实现，比如 MySQL、Redis、SMTP；
+  - 高层和低层都通过接口/抽象基类交互；
+  - 具体实现放在低层，由外部“注入”给高层；
+  - 这样更换实现时，高层代码不用改。
+
+  ```c++
+  struct User {
+      std::string username;
+      std::string password;
+  };
+  
+  // 抽象：高层和低层都依赖它
+  class IUserRepository {
+  public:
+      virtual ~IUserRepository() = default;
+      virtual void save(const User& user) = 0;
+  };
+  
+  // ----------------------------------------
+  // ----------------------------------------
+  // 低层模块：MySQL 实现
+  class MySQLUserRepository : public IUserRepository {
+  public:
+      void save(const User& user) override {
+          std::cout << "保存到 MySQL: " << user.username << '\n';
+      }
+  };
+  
+  // 低层模块：内存实现，方便测试
+  class InMemoryUserRepository : public IUserRepository {
+  public:
+      void save(const User& user) override {
+          users_.push_back(user);
+          std::cout << "保存到内存: " << user.username << '\n';
+      }
+  
+  private:
+      std::vector<User> users_;
+  };
+  
+  // ----------------------------------------
+  // ----------------------------------------
+  // 高层模块：只依赖 IUserRepository
+  class UserService {
+  public:
+      explicit UserService(IUserRepository& repository)
+          : repository_(repository) {}
+  
+      void registerUser(const std::string& username, const std::string& password) {
+          User user{username, password};
+          repository_.save(user);
+      }
+  
+  private:
+      IUserRepository& repository_;
+  };
+  ```
 
 ## 2 设计模式实例
 
